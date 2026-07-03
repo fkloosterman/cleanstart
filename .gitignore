@@ -26,6 +26,8 @@ dist-ssr
 
 # Supabase CLI local cache
 supabase/.temp
+supabase/.branches/*
+supabase/snippets/*
 
 # Editor directories and files
 .vscode/*

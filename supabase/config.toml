@@ -1,1 +1,7 @@
 project_id = "kqnkvtguipyprxpwlboh"
+
+# Disable log analytics container — it tries to mount the Docker socket,
+# which fails under various flavors of Docker like Orbstack, Lima, Colima and Docker Desktop
+# due to socket path incompatibility.
+[analytics]
+enabled = false

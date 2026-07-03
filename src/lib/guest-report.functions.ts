@@ -1,5 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
-import { createOpenRouterProvider } from "@/lib/ai-gateway.server";
+import { createOpenRouterModel } from "@/lib/ai-gateway.server";
 import { generateText } from "ai";
 import { z } from "zod";
 
@@ -67,8 +67,7 @@ export const generateGuestReport = createServerFn({ method: "POST" })
 
     const persona = data.tenure ?? null;
 
-    const gateway = createOpenRouterProvider(OPENROUTER_API_KEY);
-    const model = gateway("openai/gpt-oss-120b:free");
+    const model = createOpenRouterModel(OPENROUTER_API_KEY);
 
     const system = `You are Clean Start's report writer. Read the conversation between the user and the Clean Start guide and produce a calm, plain-language personalized research summary.
 

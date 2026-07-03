@@ -1,4 +1,4 @@
-import { createOpenRouterProvider } from "@/lib/ai-gateway.server";
+import { createOpenRouterModel } from "@/lib/ai-gateway.server";
 import { buildSystemPrompt, type Persona } from "@/lib/clean-start-prompt";
 import { createFileRoute } from "@tanstack/react-router";
 import { convertToModelMessages, streamText, type UIMessage } from "ai";
@@ -114,8 +114,7 @@ export const Route = createFileRoute("/api/public/chat-guest")({
         });
         const system = `${buildContextSystem(tenureValue, city, state, utility)}\n\n${baseSystem}`;
 
-        const gateway = createOpenRouterProvider(OPENROUTER_API_KEY);
-        const model = gateway("openai/gpt-oss-120b:free");
+        const model = createOpenRouterModel(OPENROUTER_API_KEY);
 
         const result = streamText({
           model,

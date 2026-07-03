@@ -1,6 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
-import { createOpenRouterProvider } from "@/lib/ai-gateway.server";
+import { createOpenRouterModel } from "@/lib/ai-gateway.server";
 import { generateText } from "ai";
 import { z } from "zod";
 
@@ -106,8 +106,7 @@ export const generateReport = createServerFn({ method: "POST" })
     const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
     if (!OPENROUTER_API_KEY) throw new Error("Missing OPENROUTER_API_KEY");
 
-    const gateway = createOpenRouterProvider(OPENROUTER_API_KEY);
-    const model = gateway("openai/gpt-oss-120b:free");
+    const model = createOpenRouterModel(OPENROUTER_API_KEY);
 
     const system = `You are Clean Start's report writer. Read the conversation between the user and the Clean Start guide and produce a calm, plain-language personalized research summary.
 

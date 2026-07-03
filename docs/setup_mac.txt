@@ -1,0 +1,9 @@
+colima start
+docker stop $(docker ps -a -q)
+curl -fsSL https://bun.com/install | bash
+osascript -e 'tell application "Terminal" to do script "cd ~/Projects/cleanstart && bunx supabase start && bunx supabase db reset"'
+bunx supabase start
+bunx supabase db reset
+cp .env.example .env
+bun install
+bun run dev

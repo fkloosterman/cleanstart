@@ -1,4 +1,4 @@
-import { createOpenRouterProvider } from "@/lib/ai-gateway.server";
+import { createOpenRouterModel } from "@/lib/ai-gateway.server";
 import { buildSystemPrompt, type Persona } from "@/lib/clean-start-prompt";
 import { createClient } from "@supabase/supabase-js";
 import { createFileRoute } from "@tanstack/react-router";
@@ -96,8 +96,7 @@ export const Route = createFileRoute("/api/chat")({
           assistantTurnCount,
         });
 
-        const gateway = createOpenRouterProvider(OPENROUTER_API_KEY);
-        const model = gateway("openai/gpt-oss-120b:free");
+        const model = createOpenRouterModel(OPENROUTER_API_KEY);
 
         const result = streamText({
           model,

@@ -1,5 +1,8 @@
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 
+const DEFAULT_OPENROUTER_URL = "https://openrouter.ai/api/v1";
+const DEFAULT_OPENROUTER_MODEL = "openai/gpt-oss-120b:free";
+
 // Free models are individually rate-limited upstream and can 429 under load
 // (documented OpenRouter behavior, not our own quota). These are fallback
 // candidates OpenRouter tries in order if the primary model errors/rate-limits
@@ -11,9 +14,10 @@ const FREE_MODEL_FALLBACKS = [
 ];
 
 export function createOpenRouterProvider(openRouterApiKey: string) {
+  const baseURL = process.env.OPENROUTER_URL ?? DEFAULT_OPENROUTER_URL;
   return createOpenAICompatible({
     name: "openrouter",
-    baseURL: "https://openrouter.ai/api/v1",
+    baseURL,
     headers: {
       Authorization: `Bearer ${openRouterApiKey}`,
       // OpenRouter uses this for its public model-usage rankings, not for
@@ -40,4 +44,14 @@ export function createOpenRouterProvider(openRouterApiKey: string) {
       return fetch(input, init);
     },
   });
+}
+
+/**
+ * Convenience helper: creates the provider and immediately returns a model
+ * instance using the OPENROUTER_MODEL env var (falls back to the default
+ * primary model if the var is unset).
+ */
+export function createOpenRouterModel(openRouterApiKey: string) {
+  const modelId = process.env.OPENROUTER_MODEL ?? DEFAULT_OPENROUTER_MODEL;
+  return createOpenRouterProvider(openRouterApiKey)(modelId);
 }
