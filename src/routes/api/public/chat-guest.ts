@@ -1,5 +1,5 @@
 import { createOpenRouterModel } from "@/lib/ai-gateway.server";
-import { buildSystemPrompt, type Persona } from "@/lib/clean-start-prompt";
+import { buildSystemPrompt, type Persona } from "@/lib/prompts/chat";
 import { createFileRoute } from "@tanstack/react-router";
 import { convertToModelMessages, streamText, type UIMessage } from "ai";
 
