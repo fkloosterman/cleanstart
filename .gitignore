@@ -33,6 +33,9 @@ supabase/snippets/*
 .vscode/*
 !.vscode/extensions.json
 .idea
+
+# Claude Code local overrides (personal, not shared with the team)
+.claude/settings.local.json
 .DS_Store
 *.suo
 *.ntvs*
