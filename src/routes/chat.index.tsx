@@ -22,6 +22,7 @@ import {
   MapPin,
   MapPinCheck,
   Loader2,
+  RotateCcw,
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -210,8 +211,17 @@ function ChatPage() {
     [tenure, location],
   );
 
-  const { messages, sendMessage, status } = useChat({
-    id: "cleanstart-chat",
+  // useChat only seeds its internal message list from `messages` once, when
+  // it (re)creates its Chat instance — which only happens on mount or when
+  // `id` changes. localStorage is read asynchronously in the effect above, so
+  // on first render `initialMessages` is still null and the Chat instance
+  // gets seeded empty. Switching `id` once loading completes forces the SDK
+  // to recreate the instance with the now-loaded messages instead of quietly
+  // discarding them (and then overwriting localStorage with an empty array
+  // via the persistence effect below).
+  const chatId = initialMessages === null ? "cleanstart-chat-pending" : "cleanstart-chat";
+  const { messages, sendMessage, status, setMessages } = useChat({
+    id: chatId,
     messages: initialMessages ?? [],
     transport,
     onError(err) {
@@ -263,6 +273,26 @@ function ChatPage() {
     setZipStepDone(false);
     setLocation(null);
     try {
+      window.localStorage.removeItem(LOCATION_KEY);
+    } catch {
+      // ignore
+    }
+  };
+
+  // Once messages exist, `step` is pinned to 4 and TenureStep/ZipStep (with
+  // their "change" pills) never render again — this is the only way back to
+  // step 1 to pick a different tenure/location or ditch a stuck conversation.
+  const handleStartOver = () => {
+    if (!confirm("Start a new conversation? This clears your current chat and can't be undone.")) {
+      return;
+    }
+    setMessages([]);
+    setTenure(null);
+    setLocation(null);
+    setZipStepDone(false);
+    try {
+      window.localStorage.removeItem(STORAGE_KEY);
+      window.localStorage.removeItem(TENURE_KEY);
       window.localStorage.removeItem(LOCATION_KEY);
     } catch {
       // ignore
@@ -365,8 +395,28 @@ function ChatPage() {
         )}
         {step === 4 ? (
           <>
-            {messages.filter((m) => m.role === "assistant").length >= 3 && (
-              <div className="mb-3 flex justify-end">
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+              <div className="flex flex-wrap items-center gap-2">
+                {tenure && (
+                  <span className="inline-flex items-center gap-1.5 rounded-full border border-primary/40 bg-primary-light/40 px-3 py-1 text-xs font-medium text-primary-dark">
+                    {(() => {
+                      const Icon = TENURE_META[tenure].icon;
+                      return <Icon className="h-3.5 w-3.5" />;
+                    })()}
+                    {TENURE_META[tenure].label}
+                  </span>
+                )}
+                {location && (
+                  <span className="inline-flex items-center gap-1.5 rounded-full border border-primary/40 bg-primary-light/40 px-3 py-1 text-xs font-medium text-primary-dark">
+                    <MapPin className="h-3.5 w-3.5" />
+                    {location.city}, {location.state}
+                  </span>
+                )}
+                <Button variant="ghost" size="sm" onClick={handleStartOver}>
+                  <RotateCcw className="mr-1 h-4 w-4" /> Start over
+                </Button>
+              </div>
+              {messages.filter((m) => m.role === "assistant").length >= 3 && (
                 <Button
                   variant="outline"
                   size="sm"
@@ -392,8 +442,8 @@ function ChatPage() {
                 >
                   <FileText className="mr-1 h-4 w-4" /> Generate report
                 </Button>
-              </div>
-            )}
+              )}
+            </div>
             <Conversation className="flex-1">
               <ConversationContent className="px-0">
                 <div className="flex flex-col gap-6">
