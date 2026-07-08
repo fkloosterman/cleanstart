@@ -355,13 +355,7 @@ function ChatPage() {
   };
 
   const hasMessages = messages.length > 0;
-  const step: 1 | 2 | 3 | 4 = hasMessages
-    ? 4
-    : !tenure
-      ? 1
-      : !zipStepDone
-        ? 2
-        : 3;
+  const step: 1 | 2 | 3 | 4 = hasMessages ? 4 : !tenure ? 1 : !zipStepDone ? 2 : 3;
 
   if (authLoading || !recentSessionChecked || creatingSession) {
     return (
@@ -425,9 +419,7 @@ function ChatPage() {
                       const transcript = messages
                         .map((m) => ({
                           role: m.role,
-                          content: m.parts
-                            .map((p) => (p.type === "text" ? p.text : ""))
-                            .join(""),
+                          content: m.parts.map((p) => (p.type === "text" ? p.text : "")).join(""),
                         }))
                         .filter((m) => m.content.trim().length > 0);
                       window.sessionStorage.setItem(
@@ -449,16 +441,11 @@ function ChatPage() {
                 <div className="flex flex-col gap-6">
                   {messages.map((m) => {
                     const isUser = m.role === "user";
-                    const text = m.parts
-                      .map((p) => (p.type === "text" ? p.text : ""))
-                      .join("");
+                    const text = m.parts.map((p) => (p.type === "text" ? p.text : "")).join("");
                     return (
                       <div
                         key={m.id}
-                        className={cn(
-                          "flex flex-col gap-1",
-                          isUser ? "items-end" : "items-start",
-                        )}
+                        className={cn("flex flex-col gap-1", isUser ? "items-end" : "items-start")}
                       >
                         <span className="px-1 text-xs text-muted-foreground">
                           {isUser ? "You" : "Clean Start"}
@@ -563,9 +550,19 @@ function StepDots({ active }: { active: 1 | 2 | 3 }) {
 
 function TenureStep({ onPick }: { onPick: (t: Tenure) => void }) {
   const cards: { id: Tenure; title: string; sub: string; Icon: typeof Home }[] = [
-    { id: "homeowner", title: "I own my home", sub: "Solar, heat pumps, efficiency upgrades", Icon: Home },
+    {
+      id: "homeowner",
+      title: "I own my home",
+      sub: "Solar, heat pumps, efficiency upgrades",
+      Icon: Home,
+    },
     { id: "renter", title: "I rent", sub: "Community solar, renter rebates, EVs", Icon: Building2 },
-    { id: "curious", title: "Not sure yet", sub: "Just learning — show me everything", Icon: HelpCircle },
+    {
+      id: "curious",
+      title: "Not sure yet",
+      sub: "Just learning — show me everything",
+      Icon: HelpCircle,
+    },
   ];
   return (
     <div className="flex h-full flex-col items-center justify-center px-2 py-8 text-center">
@@ -573,9 +570,7 @@ function TenureStep({ onPick }: { onPick: (t: Tenure) => void }) {
       <span className="mb-5 flex h-11 w-11 items-center justify-center rounded-full bg-primary-light">
         <Home className="h-5 w-5 text-primary-dark" />
       </span>
-      <h2 className="text-2xl font-semibold tracking-tight sm:text-3xl">
-        Tell us about your home
-      </h2>
+      <h2 className="text-2xl font-semibold tracking-tight sm:text-3xl">Tell us about your home</h2>
       <p className="mt-3 max-w-md text-sm text-muted-foreground">
         Helps us tailor advice, rebates, and programs to your actual situation.
       </p>
@@ -595,9 +590,7 @@ function TenureStep({ onPick }: { onPick: (t: Tenure) => void }) {
         ))}
       </div>
 
-      <p className="mt-6 text-xs text-muted-foreground">
-        No account needed · not stored anywhere
-      </p>
+      <p className="mt-6 text-xs text-muted-foreground">No account needed · not stored anywhere</p>
     </div>
   );
 }
@@ -642,12 +635,10 @@ function ZipStep({ onDone }: { onDone: (loc: Location | null) => void }) {
       <span className="mb-5 flex h-11 w-11 items-center justify-center rounded-full bg-primary-light">
         <MapPin className="h-5 w-5 text-primary-dark" />
       </span>
-      <h2 className="text-2xl font-semibold tracking-tight sm:text-3xl">
-        What's your zip code?
-      </h2>
+      <h2 className="text-2xl font-semibold tracking-tight sm:text-3xl">What's your zip code?</h2>
       <p className="mt-3 max-w-md text-sm text-muted-foreground">
-        Rebates and programs vary by utility and state. Your zip helps us surface
-        what's actually available where you live.
+        Rebates and programs vary by utility and state. Your zip helps us surface what's actually
+        available where you live.
       </p>
 
       <div className="mt-8 flex w-full max-w-[320px] flex-col gap-3">
@@ -669,10 +660,7 @@ function ZipStep({ onDone }: { onDone: (loc: Location | null) => void }) {
           disabled={loading || !!resolved}
           className="rounded-md border border-border bg-card px-4 py-3 text-center text-lg tracking-[0.3em] shadow-sm placeholder:tracking-normal placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary disabled:opacity-60"
         />
-        <Button
-          onClick={lookup}
-          disabled={zip.length !== 5 || loading || !!resolved}
-        >
+        <Button onClick={lookup} disabled={zip.length !== 5 || loading || !!resolved}>
           {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Look up"}
         </Button>
 
@@ -684,9 +672,7 @@ function ZipStep({ onDone }: { onDone: (loc: Location | null) => void }) {
         )}
         {error && <p className="text-sm text-destructive">{error}</p>}
 
-        <p className="mt-1 text-xs text-muted-foreground">
-          Only your zip — never your address
-        </p>
+        <p className="mt-1 text-xs text-muted-foreground">Only your zip — never your address</p>
         <button
           type="button"
           onClick={() => onDone(null)}

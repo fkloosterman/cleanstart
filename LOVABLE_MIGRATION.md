@@ -3,10 +3,10 @@
 This document describes how the `cleanstart` app was taken off **Lovable
 Cloud** — the all-in-one platform it was originally built on — and rebuilt
 on independent, standard services. It's written so someone non-technical
-can follow the same path, with explanations of *why* each step exists, not
+can follow the same path, with explanations of _why_ each step exists, not
 just what to click.
 
-If you just need access to the *existing* team's already-running copy of
+If you just need access to the _existing_ team's already-running copy of
 the app, stop here and use [ONBOARDING.md](ONBOARDING.md) instead — that's
 a much shorter process of requesting credentials, not creating new
 infrastructure.
@@ -35,12 +35,12 @@ Lovable, open the GitHub integration and connect a repository.
 Once the code lives on GitHub, "migrating off Lovable" means replacing
 each hidden Lovable-provided service with one you own:
 
-| Lovable provided… | Replaced with… |
-|---|---|
-| A managed database + user accounts | **Supabase** (the same technology Lovable uses under the hood, but under your own account) |
-| "Sign in with Google" via Lovable's wrapper | **Google Cloud** OAuth credentials of your own |
-| AI model access via Lovable's gateway | **OpenRouter** (one API that fronts many AI models, with free options) |
-| Hosting the live website | **Vercel** (builds and hosts the site on every code push) |
+| Lovable provided…                           | Replaced with…                                                                             |
+| ------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| A managed database + user accounts          | **Supabase** (the same technology Lovable uses under the hood, but under your own account) |
+| "Sign in with Google" via Lovable's wrapper | **Google Cloud** OAuth credentials of your own                                             |
+| AI model access via Lovable's gateway       | **OpenRouter** (one API that fronts many AI models, with free options)                     |
+| Hosting the live website                    | **Vercel** (builds and hosts the site on every code push)                                  |
 
 The rest of this document walks through those replacements in the order
 they need to happen. Tools are introduced at the point you need them.
@@ -95,12 +95,12 @@ Then:
 
 ## 2. Cut the code's ties to Lovable
 
-The exported code still *calls* Lovable's services in a few places, so
+The exported code still _calls_ Lovable's services in a few places, so
 before the app can run anywhere else, those call sites have to be
 rewritten. **In this repository, this work is already done** — it lives in
-the `mvp` branch (the key commit is titled *"Migrate off Lovable Cloud"*),
+the `mvp` branch (the key commit is titled _"Migrate off Lovable Cloud"_),
 so if you forked this repo you inherit it for free. It's described here so
-you understand what changed, and so anyone migrating a *different* Lovable
+you understand what changed, and so anyone migrating a _different_ Lovable
 app knows what to look for. This is the one part of the migration that
 involves actual programming — an AI coding assistant can do it (a
 ready-to-use prompt is provided below), but someone should review the
@@ -124,10 +124,10 @@ What had to change, and why:
   expects.
 - **A committed `.env` file.** Lovable had committed a `.env` file (the
   file that holds the app's configuration keys) into the repository. In
-  this case it contained only *publishable* values — the old project's
+  this case it contained only _publishable_ values — the old project's
   public database address and its anon key, which are designed to be
   visible in the browser anyway — so nothing secret was exposed. Still,
-  `.env` files are exactly where secrets *would* go, so the migration
+  `.env` files are exactly where secrets _would_ go, so the migration
   deleted it, added `.env` to Git's ignore list so it can never be
   committed again, and added a safe fill-in-the-blanks template
   (`.env.example`) in its place. If you're migrating your own Lovable
@@ -162,7 +162,7 @@ a starting point — then review the diff it produces:
 >    and replace it with an OpenAI-compatible provider using base URL
 >    `https://openrouter.ai/api/v1` (overridable via an `OPENROUTER_URL`
 >    env var), authenticated with `Authorization: Bearer
->    ${OPENROUTER_API_KEY}`. Remove any Lovable-specific headers and
+${OPENROUTER_API_KEY}`. Remove any Lovable-specific headers and
 >    run-ID plumbing. Add OpenRouter's model-fallback mechanism: inject a
 >    `models` array into each request body listing the primary model
 >    followed by a few free fallback models, so rate-limited free models
@@ -270,18 +270,20 @@ Now the database itself:
    database tables. The Supabase command-line tool does this; you don't
    install it separately — `bunx` fetches and runs it on demand. In a
    terminal inside the project folder:
+
    ```
    bunx supabase login
    bunx supabase link --project-ref <your-project-id>
    bunx supabase db push
    ```
+
    `login` opens a browser window to authorize the tool; `link` ties this
    folder to your specific Supabase project (it also records the project
    ID in `supabase/config.toml`); `db push` runs the project's schema
    script against your empty database, creating all tables, rules, and
    indexes in one shot.
 
-   *Windows note:* if PowerShell refuses to run the commands with a
+   _Windows note:_ if PowerShell refuses to run the commands with a
    "scripts is disabled" error, either allow local scripts once with
    `Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned`,
    or prefix each command with
@@ -308,7 +310,7 @@ who they're granting access to.
    ID** of type **Web application**:
    - **Authorized redirect URI** — this is the critical one. It's where
      Google sends users back after they approve, and it must be your
-     *Supabase* project's callback address, because Supabase brokers the
+     _Supabase_ project's callback address, because Supabase brokers the
      whole sign-in:
      `https://<your-project-id>.supabase.co/auth/v1/callback`
    - **Authorized JavaScript origins** — add your live site's address
@@ -317,7 +319,7 @@ who they're granting access to.
      a full-page redirect through Supabase, so from Google's point of
      view the interaction happens at the Supabase callback address, not
      at whatever address your app is running on. (Which addresses your
-     app may run on is controlled by *Supabase's* redirect-URL list in
+     app may run on is controlled by _Supabase's_ redirect-URL list in
      step 8 instead.)
 4. Google gives you a **Client ID** and **Client Secret** — copy both.
 5. In the Supabase dashboard: **Authentication → Providers → Google** —
@@ -431,7 +433,7 @@ roughly in order of importance:
 
 - **Stop developing against the production database.** This is the
   biggest one. Right now, a developer running the app locally reads and
-  writes the *same* database that live users depend on — a bug or a
+  writes the _same_ database that live users depend on — a bug or a
   careless experiment can corrupt or delete real data. The professional
   pattern is that each developer runs a **local copy of Supabase** on
   their own machine (the Supabase CLI can do this with `supabase start`,
@@ -447,7 +449,7 @@ roughly in order of importance:
 - **Separate credentials per environment and per purpose.** One shared
   `.env` handed to every developer means everyone holds production
   secrets, and a leak can't be traced or revoked narrowly. Better:
-  developers get only local/staging keys, production secrets live *only*
+  developers get only local/staging keys, production secrets live _only_
   in Vercel, and anything sensitive (like the service-role key) is held
   by as few people as possible and rotated on a schedule.
 - **Automated tests and checks before merging.** There's currently no
@@ -464,7 +466,7 @@ roughly in order of importance:
   requires completing Google's verification, and the app would get a
   real custom domain instead of a `*.vercel.app` address.
 - **Error monitoring and backups.** Someone should know when the live app
-  breaks *before* a user reports it (an error-tracking service like
+  breaks _before_ a user reports it (an error-tracking service like
   Sentry, plus alerts) — and database backups should be verified, not
   assumed (Supabase's free tier keeps them short-lived).
 

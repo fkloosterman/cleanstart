@@ -1,7 +1,7 @@
 # Where Clean Start is headed — a plain-language overview
 
-*(For the full technical design, see
-[design-personalization-architecture.md](design-personalization-architecture.md).)*
+_(For the full technical design, see
+[design-personalization-architecture.md](design-personalization-architecture.md).)_
 
 ## What changes for the user
 
@@ -26,7 +26,7 @@ People come to clean energy for different reasons: lower bills, climate
 impact, a more comfortable home, backup power when the grid fails — or
 just to learn. The app figures out which of these matters most to you
 (and it's fine to care about more than one), then orders its questions,
-its answers, and your report around *your* reason. Someone chasing
+its answers, and your report around _your_ reason. Someone chasing
 lower bills sees quick money-savers first; someone worried about
 outages sees backup options first — built from the same trusted
 material.
@@ -37,8 +37,8 @@ The biggest trust change: **the AI no longer writes the facts.** A
 curated, human-reviewed library holds the building blocks — explainers,
 recommended actions, incentive programs, diagrams and images — each
 tagged by region and housing type, each with sources and a
-"last verified" date. The AI's job is to *pick* the right blocks for
-you and explain *why they fit your situation*. It cannot recommend
+"last verified" date. The AI's job is to _pick_ the right blocks for
+you and explain _why they fit your situation_. It cannot recommend
 anything that isn't in the library, and every report shows its sources.
 
 While the library is still growing, some report entries may be
@@ -106,7 +106,7 @@ flowchart TD
     style COMPOSER fill:#fff8e1,stroke:#f9a825
 ```
 
-*(GitHub renders this diagram automatically when viewing the file.)*
+_(GitHub renders this diagram automatically when viewing the file.)_
 
 ## Why this order of work
 

@@ -36,7 +36,13 @@ export function buildSystemPrompt({
   assistantTurnCount: number;
 }) {
   const stage =
-    assistantTurnCount < 2 ? STAGES.discovery : assistantTurnCount < 6 ? STAGES.education : STAGES.synthesis;
-  const personaNote = persona ? PERSONA_NOTES[persona] : "The user has not picked a persona yet — ask gently if helpful.";
+    assistantTurnCount < 2
+      ? STAGES.discovery
+      : assistantTurnCount < 6
+        ? STAGES.education
+        : STAGES.synthesis;
+  const personaNote = persona
+    ? PERSONA_NOTES[persona]
+    : "The user has not picked a persona yet — ask gently if helpful.";
   return [BASE, personaNote, stage].join("\n\n");
 }

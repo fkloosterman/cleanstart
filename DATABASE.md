@@ -33,7 +33,7 @@ hasn't been updated yet:
   not a single migration.
 - When in doubt, ask: "if this migration runs right now, before any code
   change ships, does the app still work? And if the old code somehow runs
-  after this migration, does *that* still work?" Both need to be yes.
+  after this migration, does _that_ still work?" Both need to be yes.
 
 This rule is about production, but write every migration this way — the
 same files get applied to both databases, and dev should mirror prod.
@@ -72,9 +72,11 @@ bunx supabase link --project-ref kqnkvtguipyprxpwlboh
 ```
 
 Then, to push pending migrations:
+
 ```
 bunx supabase db push
 ```
+
 This applies any migration files that aren't yet recorded as applied on the
 remote. Review its output before confirming — it shows exactly what SQL is
 about to run.
@@ -90,11 +92,14 @@ Running `bunx supabase ...` directly in PowerShell can fail with a script
 execution error, since PowerShell's default execution policy blocks the
 `.ps1` shim these tools install. If you hit that, either bypass it for one
 command:
+
 ```
 powershell -ExecutionPolicy Bypass -Command "bunx supabase login"
 ```
+
 or, for the rest of the session, relax the policy just for your current
 PowerShell process (doesn't require admin, doesn't persist):
+
 ```
 Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 ```
@@ -117,6 +122,7 @@ Point your local `.env` at the local stack's URL/keys (printed by
 and exercise the feature that depends on the new schema end-to-end.
 
 When you're done:
+
 ```
 bunx supabase stop
 ```

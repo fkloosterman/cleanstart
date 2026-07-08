@@ -35,11 +35,13 @@ const ReportSchema = z.object({
   ),
 });
 
-
 export type CleanStartReport = z.infer<typeof ReportSchema>;
 
 function extractJson(raw: string): unknown {
-  let s = raw.replace(/```json\s*/gi, "").replace(/```\s*/g, "").trim();
+  let s = raw
+    .replace(/```json\s*/gi, "")
+    .replace(/```\s*/g, "")
+    .trim();
   const start = s.search(/[\{\[]/);
   const end = Math.max(s.lastIndexOf("}"), s.lastIndexOf("]"));
   if (start === -1 || end === -1) throw new Error("Model did not return JSON");
@@ -47,11 +49,13 @@ function extractJson(raw: string): unknown {
   try {
     return JSON.parse(s);
   } catch {
-    s = s.replace(/,\s*}/g, "}").replace(/,\s*]/g, "]").replace(/[\x00-\x1F\x7F]/g, "");
+    s = s
+      .replace(/,\s*}/g, "}")
+      .replace(/,\s*]/g, "]")
+      .replace(/[\x00-\x1F\x7F]/g, "");
     return JSON.parse(s);
   }
 }
-
 
 export const getReport = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
@@ -100,9 +104,7 @@ export const generateReport = createServerFn({ method: "POST" })
       throw new Error("Have a short conversation first, then come back to generate a report.");
     }
 
-    const transcript = messages
-      .map((m) => `${m.role.toUpperCase()}: ${m.content}`)
-      .join("\n\n");
+    const transcript = messages.map((m) => `${m.role.toUpperCase()}: ${m.content}`).join("\n\n");
 
     const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
     if (!OPENROUTER_API_KEY) throw new Error("Missing OPENROUTER_API_KEY");
@@ -116,7 +118,6 @@ export const generateReport = createServerFn({ method: "POST" })
     });
 
     const object = ReportSchema.parse(extractJson(text));
-
 
     const payload = {
       session_id: sessionId,

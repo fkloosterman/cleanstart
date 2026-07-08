@@ -34,26 +34,25 @@ function AboutPage() {
           A calmer way to understand your clean energy options.
         </h1>
         <p className="mt-4 text-lg text-muted-foreground">
-          Clean Start is a conversational guide that helps households — whether you rent,
-          own, or are just curious — learn about solar, heat pumps, EVs, weatherization,
-          and incentives at your own pace. We don't sell equipment, and we don't take
-          commissions.
+          Clean Start is a conversational guide that helps households — whether you rent, own, or
+          are just curious — learn about solar, heat pumps, EVs, weatherization, and incentives at
+          your own pace. We don't sell equipment, and we don't take commissions.
         </p>
       </header>
 
       {/* What we do */}
       <section className="mb-12 grid gap-4 sm:grid-cols-3">
         <Card icon={<BookOpen className="h-5 w-5 text-primary" />} title="Educational, not salesy">
-          Plain-language answers grounded in publicly available information. No upsells,
-          no lead generation.
+          Plain-language answers grounded in publicly available information. No upsells, no lead
+          generation.
         </Card>
         <Card icon={<Users className="h-5 w-5 text-primary" />} title="Built for your situation">
-          Guidance adapts to whether you're a renter, a homeowner, or simply exploring —
-          so the next step actually fits your life.
+          Guidance adapts to whether you're a renter, a homeowner, or simply exploring — so the next
+          step actually fits your life.
         </Card>
         <Card icon={<Shield className="h-5 w-5 text-primary" />} title="Vendor-neutral">
-          We don't represent any installer, utility, or manufacturer. Our only job is to
-          help you ask better questions.
+          We don't represent any installer, utility, or manufacturer. Our only job is to help you
+          ask better questions.
         </Card>
       </section>
 
@@ -65,64 +64,46 @@ function AboutPage() {
         </div>
         <h2 className="text-2xl font-semibold tracking-tight">How we handle your data</h2>
         <p className="mt-2 text-sm text-muted-foreground">
-          This page is maintained by the Clean Start team to answer common privacy
-          questions about the app. It describes app-visible controls and current
-          practices — it isn't a legal certification or independent audit.
+          This page is maintained by the Clean Start team to answer common privacy questions about
+          the app. It describes app-visible controls and current practices — it isn't a legal
+          certification or independent audit.
         </p>
 
         <div className="mt-8 space-y-6 text-sm">
-          <PolicyItem
-            icon={<Database className="h-4 w-4 text-primary" />}
-            title="What we collect"
-          >
-            When you sign in, we store your account identifier and an optional persona
-            (renter, homeowner, curious). When you chat, we store your messages, the
-            assistant's replies, and any reports you generate so you can come back to
-            them later. We don't ask for your address, income, utility account, or
-            other sensitive identifiers.
+          <PolicyItem icon={<Database className="h-4 w-4 text-primary" />} title="What we collect">
+            When you sign in, we store your account identifier and an optional persona (renter,
+            homeowner, curious). When you chat, we store your messages, the assistant's replies, and
+            any reports you generate so you can come back to them later. We don't ask for your
+            address, income, utility account, or other sensitive identifiers.
           </PolicyItem>
 
-          <PolicyItem
-            icon={<Lock className="h-4 w-4 text-primary" />}
-            title="Who can see it"
-          >
-            Your sessions, messages, and reports are private to your account. Database
-            access is enforced with row-level security so that only you — signed in —
-            can read or modify your own data. The Clean Start team can't read your
-            conversations through the app interface.
+          <PolicyItem icon={<Lock className="h-4 w-4 text-primary" />} title="Who can see it">
+            Your sessions, messages, and reports are private to your account. Database access is
+            enforced with row-level security so that only you — signed in — can read or modify your
+            own data. The Clean Start team can't read your conversations through the app interface.
           </PolicyItem>
 
           <PolicyItem
             icon={<Shield className="h-4 w-4 text-primary" />}
             title="How AI responses are generated"
           >
-            Your messages are sent to a hosted AI provider through a server-side
-            gateway to produce replies. The provider's API key is never exposed in
-            your browser. We don't use your conversations to train models, and we
-            don't share them with third parties for marketing.
+            Your messages are sent to a hosted AI provider through a server-side gateway to produce
+            replies. The provider's API key is never exposed in your browser. We don't use your
+            conversations to train models, and we don't share them with third parties for marketing.
           </PolicyItem>
 
-          <PolicyItem
-            icon={<Trash2 className="h-4 w-4 text-primary" />}
-            title="Deleting your data"
-          >
+          <PolicyItem icon={<Trash2 className="h-4 w-4 text-primary" />} title="Deleting your data">
             You can delete any conversation (and its report) from{" "}
             <Link to="/history" className="underline underline-offset-4">
               your sessions
             </Link>{" "}
-            page at any time. To delete your account entirely, email us at the address
-            below and we'll remove your sessions, messages, reports, and profile.
+            page at any time. To delete your account entirely, email us at the address below and
+            we'll remove your sessions, messages, reports, and profile.
           </PolicyItem>
 
-          <PolicyItem
-            icon={<Mail className="h-4 w-4 text-primary" />}
-            title="Contact"
-          >
+          <PolicyItem icon={<Mail className="h-4 w-4 text-primary" />} title="Contact">
             Privacy questions, data requests, or feedback:{" "}
-            <a
-              href="mailto:hello@cleanstart.app"
-              className="underline underline-offset-4"
-            >
+            <a href="mailto:hello@cleanstart.app" className="underline underline-offset-4">
               hello@cleanstart.app
             </a>
             .
@@ -133,11 +114,10 @@ function AboutPage() {
       {/* Disclaimers */}
       <section className="mt-10 rounded-xl border border-dashed border-border bg-muted/30 p-5 text-xs text-muted-foreground">
         <p>
-          <strong className="text-foreground">Not professional advice.</strong> Clean
-          Start provides general educational information. Incentive amounts,
-          eligibility rules, and equipment options change frequently — confirm
-          specifics with a licensed professional, your utility, or the program
-          administrator before making a financial decision.
+          <strong className="text-foreground">Not professional advice.</strong> Clean Start provides
+          general educational information. Incentive amounts, eligibility rules, and equipment
+          options change frequently — confirm specifics with a licensed professional, your utility,
+          or the program administrator before making a financial decision.
         </p>
       </section>
 

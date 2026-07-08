@@ -40,7 +40,10 @@ export type GuestReport = z.infer<typeof ReportSchema> & {
 };
 
 function extractJson(raw: string): unknown {
-  let s = raw.replace(/```json\s*/gi, "").replace(/```\s*/g, "").trim();
+  let s = raw
+    .replace(/```json\s*/gi, "")
+    .replace(/```\s*/g, "")
+    .trim();
   const start = s.search(/[\{\[]/);
   const end = Math.max(s.lastIndexOf("}"), s.lastIndexOf("]"));
   if (start === -1 || end === -1) throw new Error("Model did not return JSON");

@@ -32,7 +32,7 @@
 
 ## Overview
 
-**Clean Start** is a conversational web app that guides users through the landscape of home clean energy. The AI assistant — itself named *Clean Start* — meets people where they are: it adapts to whether the user is a homeowner, a renter, or just climate-curious, and progressively moves through a three-stage conversation (discovery → education → synthesis) before offering to generate a personalized PDF/DOCX summary report they can keep.
+**Clean Start** is a conversational web app that guides users through the landscape of home clean energy. The AI assistant — itself named _Clean Start_ — meets people where they are: it adapts to whether the user is a homeowner, a renter, or just climate-curious, and progressively moves through a three-stage conversation (discovery → education → synthesis) before offering to generate a personalized PDF/DOCX summary report they can keep.
 
 Key product characteristics:
 
@@ -46,19 +46,19 @@ Key product characteristics:
 
 ## Tech Stack
 
-| Layer | Technology |
-|---|---|
-| **Framework** | [TanStack Start](https://tanstack.com/start) (React + file-based routing + SSR/server functions) |
-| **UI Components** | [Radix UI](https://radix-ui.com) primitives + [shadcn/ui](https://ui.shadcn.com) patterns |
-| **Styling** | [Tailwind CSS v4](https://tailwindcss.com) |
-| **AI / Streaming** | [Vercel AI SDK](https://sdk.vercel.ai) (`ai`, `@ai-sdk/react`, `@ai-sdk/openai-compatible`) |
-| **AI Provider** | [OpenRouter](https://openrouter.ai) — primary model `openai/gpt-oss-120b:free`, with automatic fallbacks |
-| **Database & Auth** | [Supabase](https://supabase.com) (Postgres + Row Level Security + built-in OAuth) |
-| **Hosting** | [Vercel](https://vercel.com) |
-| **Package Manager** | [Bun](https://bun.sh) |
-| **Language** | TypeScript |
-| **Markdown Rendering** | [streamdown](https://github.com/streamdown/streamdown) (streaming-aware markdown) |
-| **Report Export** | [jsPDF](https://github.com/parallax/jsPDF) + [docx](https://github.com/dolanmiu/docx) |
+| Layer                  | Technology                                                                                               |
+| ---------------------- | -------------------------------------------------------------------------------------------------------- |
+| **Framework**          | [TanStack Start](https://tanstack.com/start) (React + file-based routing + SSR/server functions)         |
+| **UI Components**      | [Radix UI](https://radix-ui.com) primitives + [shadcn/ui](https://ui.shadcn.com) patterns                |
+| **Styling**            | [Tailwind CSS v4](https://tailwindcss.com)                                                               |
+| **AI / Streaming**     | [Vercel AI SDK](https://sdk.vercel.ai) (`ai`, `@ai-sdk/react`, `@ai-sdk/openai-compatible`)              |
+| **AI Provider**        | [OpenRouter](https://openrouter.ai) — primary model `openai/gpt-oss-120b:free`, with automatic fallbacks |
+| **Database & Auth**    | [Supabase](https://supabase.com) (Postgres + Row Level Security + built-in OAuth)                        |
+| **Hosting**            | [Vercel](https://vercel.com)                                                                             |
+| **Package Manager**    | [Bun](https://bun.sh)                                                                                    |
+| **Language**           | TypeScript                                                                                               |
+| **Markdown Rendering** | [streamdown](https://github.com/streamdown/streamdown) (streaming-aware markdown)                        |
+| **Report Export**      | [jsPDF](https://github.com/parallax/jsPDF) + [docx](https://github.com/dolanmiu/docx)                    |
 
 ---
 
@@ -106,13 +106,13 @@ When a user sends a chat message:
 
 The schema lives in `supabase/migrations/20260630000000_initial_schema.sql` and defines five tables, all with RLS enabled:
 
-| Table | Purpose |
-|---|---|
-| `profiles` | One row per user (linked to `auth.users`). Stores the user's persona (`homeowner` or `renter`). Auto-created on signup via trigger. |
-| `sessions` | A chat session. Belongs to a profile. Has a title, a `is_complete` flag, and timestamps. |
-| `messages` | Individual chat turns (`user` or `assistant` role). Belong to a session. |
-| `reports` | The generated summary report for a completed session. Stores `top_options`, `key_insights`, `next_steps`, `resources` (all JSONB), a `readiness_score`, and the user's persona at generation time. Unique per session. |
-| `feedback` | Per-session thumbs-up/down rating with an optional comment. |
+| Table      | Purpose                                                                                                                                                                                                                |
+| ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `profiles` | One row per user (linked to `auth.users`). Stores the user's persona (`homeowner` or `renter`). Auto-created on signup via trigger.                                                                                    |
+| `sessions` | A chat session. Belongs to a profile. Has a title, a `is_complete` flag, and timestamps.                                                                                                                               |
+| `messages` | Individual chat turns (`user` or `assistant` role). Belong to a session.                                                                                                                                               |
+| `reports`  | The generated summary report for a completed session. Stores `top_options`, `key_insights`, `next_steps`, `resources` (all JSONB), a `readiness_score`, and the user's persona at generation time. Unique per session. |
+| `feedback` | Per-session thumbs-up/down rating with an optional comment.                                                                                                                                                            |
 
 > **Important**: all environments — every developer's local machine and production — currently point at the **same** Supabase project and database. See [Database Schema Changes](#database-schema-changes) for what this means before you touch migrations.
 
@@ -176,10 +176,10 @@ bun run build       # Production bundle (usually not needed locally)
 
 ### Branch Model
 
-| Branch | Purpose |
-|---|---|
-| `mvp` | **The working and production branch.** Vercel builds from it; it is also the repo's default branch. Branch off `mvp` for all new work and PR back into `mvp`. |
-| `main` | Not actively used. Don't rely on it being kept up to date. |
+| Branch | Purpose                                                                                                                                                       |
+| ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `mvp`  | **The working and production branch.** Vercel builds from it; it is also the repo's default branch. Branch off `mvp` for all new work and PR back into `mvp`. |
+| `main` | Not actively used. Don't rely on it being kept up to date.                                                                                                    |
 
 Both `main` and `mvp` are protected via GitHub branch rulesets — no direct pushes, no force pushes. Everything lands via pull request.
 
@@ -205,7 +205,7 @@ git commit -m "Short description of the change"
 git push -u origin your-name-short-feature-description
 ```
 
-4. **Open a PR** on GitHub targeting `mvp`. Fill in a short description of *what* changed and *why*.
+4. **Open a PR** on GitHub targeting `mvp`. Fill in a short description of _what_ changed and _why_.
 5. **Check the Vercel preview** — Vercel auto-posts a preview deployment link on the PR. Click through your change in the real deployed environment before merging. This catches environment-variable and build issues that don't appear locally.
 6. **Merge** once the preview looks good and any review feedback is addressed. Vercel redeploys production automatically.
 
@@ -228,7 +228,7 @@ Because old and new code can be running against the database simultaneously (a u
 - **Adding** a table or column: safe, as long as new columns are nullable or have a default — existing code that doesn't know about them keeps working.
 - **Renaming or dropping** a column or table, or tightening a constraint (e.g. adding `NOT NULL` to an existing column): only safe once you're certain no deployed code path still reads or writes the old shape. This typically requires a two-step migration across two separate deploys (add the new shape and dual-write for a while, then remove the old shape later).
 
-When in doubt, ask: *"If this migration runs right now, before any code change ships, does the app still work? And if the old code somehow runs after this migration, does that still work?"* Both must be yes.
+When in doubt, ask: _"If this migration runs right now, before any code change ships, does the app still work? And if the old code somehow runs after this migration, does that still work?"_ Both must be yes.
 
 ### Coordination
 
@@ -345,17 +345,17 @@ cleanstart/
 
 Copy `.env.example` to `.env` and fill in the values. **Never commit real secrets.**
 
-| Variable | Scope | Description |
-|---|---|---|
-| `VITE_SUPABASE_URL` | Public (build-time) | Supabase project REST URL |
-| `VITE_SUPABASE_PUBLISHABLE_KEY` | Public (build-time) | Supabase anon (public) API key |
-| `VITE_SUPABASE_PROJECT_ID` | Public (build-time) | Supabase project ID |
-| `SUPABASE_URL` | Server-only secret | Same URL as above, for server functions |
-| `SUPABASE_PUBLISHABLE_KEY` | Server-only secret | Supabase anon key, for server functions |
-| `SUPABASE_SERVICE_ROLE_KEY` | Server-only secret | Supabase service role key — bypasses RLS |
-| `OPENROUTER_API_KEY` | Server-only secret | OpenRouter API key for AI model access |
-| `OPENROUTER_URL` | Optional | Override OpenRouter base URL (default: `https://openrouter.ai/api/v1`) |
-| `OPENROUTER_MODEL` | Optional | Override primary AI model (default: `openai/gpt-oss-120b:free`) |
+| Variable                        | Scope               | Description                                                            |
+| ------------------------------- | ------------------- | ---------------------------------------------------------------------- |
+| `VITE_SUPABASE_URL`             | Public (build-time) | Supabase project REST URL                                              |
+| `VITE_SUPABASE_PUBLISHABLE_KEY` | Public (build-time) | Supabase anon (public) API key                                         |
+| `VITE_SUPABASE_PROJECT_ID`      | Public (build-time) | Supabase project ID                                                    |
+| `SUPABASE_URL`                  | Server-only secret  | Same URL as above, for server functions                                |
+| `SUPABASE_PUBLISHABLE_KEY`      | Server-only secret  | Supabase anon key, for server functions                                |
+| `SUPABASE_SERVICE_ROLE_KEY`     | Server-only secret  | Supabase service role key — bypasses RLS                               |
+| `OPENROUTER_API_KEY`            | Server-only secret  | OpenRouter API key for AI model access                                 |
+| `OPENROUTER_URL`                | Optional            | Override OpenRouter base URL (default: `https://openrouter.ai/api/v1`) |
+| `OPENROUTER_MODEL`              | Optional            | Override primary AI model (default: `openai/gpt-oss-120b:free`)        |
 
 > In production, all of the above are set as encrypted environment variables in the **Vercel project settings** — they are never stored in the repository.
 
