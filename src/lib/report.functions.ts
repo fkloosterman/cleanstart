@@ -1,6 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
-import { createOpenRouterModel } from "@/lib/ai-gateway.server";
+import { createModelForPurpose } from "@/lib/ai-gateway.server";
 import { buildReportPrompt } from "@/lib/prompts/report";
 import { generateText } from "ai";
 import { z } from "zod";
@@ -112,7 +112,7 @@ export const generateReport = createServerFn({ method: "POST" })
     const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
     if (!OPENROUTER_API_KEY) throw new Error("Missing OPENROUTER_API_KEY");
 
-    const model = createOpenRouterModel(OPENROUTER_API_KEY);
+    const model = createModelForPurpose("composition", OPENROUTER_API_KEY);
 
     const { text } = await generateText({
       model,

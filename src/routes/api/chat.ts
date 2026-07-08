@@ -1,4 +1,4 @@
-import { createOpenRouterModel } from "@/lib/ai-gateway.server";
+import { createModelForPurpose } from "@/lib/ai-gateway.server";
 import { buildSystemPrompt, type Persona } from "@/lib/prompts/chat";
 import { createClient } from "@supabase/supabase-js";
 import { createFileRoute } from "@tanstack/react-router";
@@ -92,7 +92,7 @@ export const Route = createFileRoute("/api/chat")({
           assistantTurnCount,
         });
 
-        const model = createOpenRouterModel(OPENROUTER_API_KEY);
+        const model = createModelForPurpose("chat", OPENROUTER_API_KEY);
 
         const result = streamText({
           model,
