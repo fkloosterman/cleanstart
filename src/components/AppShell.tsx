@@ -13,7 +13,6 @@ const NAV = [
   { to: "/about", label: "About" },
 ] as const;
 
-
 export function AppShell({ children }: { children: ReactNode }) {
   const { user, signOut, loading } = useAuth();
   const [authOpen, setAuthOpen] = useState(false);
@@ -48,9 +47,13 @@ export function AppShell({ children }: { children: ReactNode }) {
 
           <div className="hidden items-center gap-2 md:flex">
             {loading ? null : user ? (
-              <Button variant="ghost" size="sm" onClick={signOut}>Sign out</Button>
+              <Button variant="ghost" size="sm" onClick={signOut}>
+                Sign out
+              </Button>
             ) : (
-              <Button size="sm" onClick={() => setAuthOpen(true)}>Sign in</Button>
+              <Button size="sm" onClick={() => setAuthOpen(true)}>
+                Sign in
+              </Button>
             )}
           </div>
 
@@ -79,11 +82,26 @@ export function AppShell({ children }: { children: ReactNode }) {
               ))}
               <div className="mt-2 border-t border-border pt-3">
                 {user ? (
-                  <Button variant="ghost" size="sm" className="w-full justify-start" onClick={() => { setMenuOpen(false); signOut(); }}>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="w-full justify-start"
+                    onClick={() => {
+                      setMenuOpen(false);
+                      signOut();
+                    }}
+                  >
                     Sign out
                   </Button>
                 ) : (
-                  <Button size="sm" className="w-full" onClick={() => { setMenuOpen(false); setAuthOpen(true); }}>
+                  <Button
+                    size="sm"
+                    className="w-full"
+                    onClick={() => {
+                      setMenuOpen(false);
+                      setAuthOpen(true);
+                    }}
+                  >
                     Sign in
                   </Button>
                 )}
@@ -98,7 +116,9 @@ export function AppShell({ children }: { children: ReactNode }) {
       <footer className="border-t border-border bg-background py-6">
         <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-2 px-4 text-xs text-muted-foreground sm:flex-row">
           <p>Privacy-first · Vendor-neutral · © 2025 Clean Start</p>
-          <Link to="/about" className="hover:text-foreground">Privacy &amp; About</Link>
+          <Link to="/about" className="hover:text-foreground">
+            Privacy &amp; About
+          </Link>
         </div>
       </footer>
 

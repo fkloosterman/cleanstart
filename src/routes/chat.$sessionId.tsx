@@ -24,14 +24,7 @@ import {
 } from "@/components/ai-elements/prompt-input";
 import { Shimmer } from "@/components/ai-elements/shimmer";
 import { Button } from "@/components/ui/button";
-import {
-  ArrowLeft,
-  FileText,
-  Leaf,
-  Loader2,
-  ThumbsDown,
-  ThumbsUp,
-} from "lucide-react";
+import { ArrowLeft, FileText, Leaf, Loader2, ThumbsDown, ThumbsUp } from "lucide-react";
 import { toast } from "sonner";
 
 const searchSchema = z.object({
@@ -307,9 +300,7 @@ function ChatConversation({
                 <Message key={m.id} from={m.role === "user" ? "user" : "assistant"}>
                   <MessageContent>
                     <MessageResponse>
-                      {m.parts
-                        .map((p) => (p.type === "text" ? p.text : ""))
-                        .join("")}
+                      {m.parts.map((p) => (p.type === "text" ? p.text : "")).join("")}
                     </MessageResponse>
                   </MessageContent>
                 </Message>
@@ -356,9 +347,7 @@ function ChatConversation({
               <PromptInputSubmit status={status} disabled={isBusy} />
             </PromptInputFooter>
           </PromptInput>
-          {error && (
-            <p className="mt-2 text-xs text-destructive">{error.message}</p>
-          )}
+          {error && <p className="mt-2 text-xs text-destructive">{error.message}</p>}
         </div>
       </div>
     </>

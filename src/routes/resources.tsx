@@ -13,8 +13,7 @@ export const Route = createFileRoute("/resources")({
       { property: "og:title", content: "Resources · Clean Start" },
       {
         property: "og:description",
-        content:
-          "Trusted, vendor-neutral places to go deeper on clean energy decisions.",
+        content: "Trusted, vendor-neutral places to go deeper on clean energy decisions.",
       },
     ],
   }),
@@ -110,7 +109,6 @@ const renters: Resource[] = [
   },
 ];
 
-
 function ResourcesPage() {
   return (
     <div className="mx-auto max-w-3xl px-4 py-12">
@@ -119,13 +117,10 @@ function ResourcesPage() {
           <Leaf className="h-3.5 w-3.5 text-primary" />
           Helpful links
         </div>
-        <h1 className="text-4xl font-semibold tracking-tight">
-          Trusted places to go deeper.
-        </h1>
+        <h1 className="text-4xl font-semibold tracking-tight">Trusted places to go deeper.</h1>
         <p className="mt-4 text-lg text-muted-foreground">
-          Every source below is independent, non-commercial, and publicly
-          available. We've organized them by topic so you can pick up wherever
-          your Clean Start conversation left off.
+          Every source below is independent, non-commercial, and publicly available. We've organized
+          them by topic so you can pick up wherever your Clean Start conversation left off.
         </p>
       </header>
 
@@ -156,10 +151,9 @@ function ResourcesPage() {
 
       <section className="mt-10 rounded-xl border border-dashed border-border bg-muted/30 p-5 text-xs text-muted-foreground">
         <p>
-          Clean Start does not maintain, vet, or have any commercial
-          relationship with the sites listed above. Links are provided for
-          informational purposes — confirm details directly with the program or
-          provider.
+          Clean Start does not maintain, vet, or have any commercial relationship with the sites
+          listed above. Links are provided for informational purposes — confirm details directly
+          with the program or provider.
         </p>
       </section>
     </div>

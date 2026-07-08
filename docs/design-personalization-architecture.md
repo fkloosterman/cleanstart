@@ -93,8 +93,8 @@ The session profile is the keystone. Once it exists:
 ### The trust principle (applies everywhere)
 
 > The model may **select** and **personalize**; the library owns the
-> **facts**. Deterministic code decides what is *eligible*; the model
-> decides what is *chosen* and *why it fits*; deterministic code
+> **facts**. Deterministic code decides what is _eligible_; the model
+> decides what is _chosen_ and _why it fits_; deterministic code
 > validates and renders.
 
 This one rule governs chat grounding, image display, figure generation,
@@ -108,28 +108,33 @@ report composition, and follow-up briefs.
 
 ```ts
 type ContentComponent = {
-  slug: string;                    // "community-solar-basics", stable forever
+  slug: string; // "community-solar-basics", stable forever
   kind: "action" | "explainer" | "incentive" | "resource" | "caveat";
   title: string;
-  summary: string;                 // 2-3 sentences — injected into chat context
-  body_md: string;                 // full text — only reports and deep-dives use this
+  summary: string; // 2-3 sentences — injected into chat context
+  body_md: string; // full text — only reports and deep-dives use this
   // targeting tags (empty array = applies to all)
-  technologies: string[];          // "solar", "heat-pump", "ev", "insulation", "behavior"
+  technologies: string[]; // "solar", "heat-pump", "ev", "insulation", "behavior"
   lanes: LaneId[];
   tenures: ("owner" | "renter")[];
-  housing_types: string[];         // "single-family", "apartment", "condo", "mobile"
-  regions: string[];               // "US", "US-MA", "CA-ON"; matched by prefix
+  housing_types: string[]; // "single-family", "apartment", "condo", "mobile"
+  regions: string[]; // "US", "US-MA", "CA-ON"; matched by prefix
   // ranking & sequencing
-  prerequisites: string[];         // slugs; unmet = held back (progressive disclosure)
+  prerequisites: string[]; // slugs; unmet = held back (progressive disclosure)
   effort: "trivial" | "weekend" | "project" | "major";
-  impact: { cost: 0|1|2|3; carbon: 0|1|2|3; comfort: 0|1|2|3; resilience: 0|1|2|3 };
+  impact: {
+    cost: 0 | 1 | 2 | 3;
+    carbon: 0 | 1 | 2 | 3;
+    comfort: 0 | 1 | 2 | 3;
+    resilience: 0 | 1 | 2 | 3;
+  };
   // trust & lifecycle
   sources: { label: string; url: string; publisher: string }[];
-  last_verified: string;           // ISO date, surfaced in UI
-  expires?: string;                // incentives with deadlines → follow-up trigger fuel
+  last_verified: string; // ISO date, surfaced in UI
+  expires?: string; // incentives with deadlines → follow-up trigger fuel
   status: "draft" | "published" | "retired";
   version: number;
-  media: string[];                 // media slugs (see 3.2)
+  media: string[]; // media slugs (see 3.2)
 };
 ```
 
@@ -149,12 +154,12 @@ Key choices:
 
 ```ts
 type ContentMedia = {
-  slug: string;                    // "heat-pump-cycle-diagram"
+  slug: string; // "heat-pump-cycle-diagram"
   kind: "diagram" | "photo" | "illustration";
-  storage_path: string;            // Supabase Storage
-  alt: string;                     // required — CI-validated
+  storage_path: string; // Supabase Storage
+  alt: string; // required — CI-validated
   caption: string;
-  credit: { source: string; license: string };  // required — we are republishing
+  credit: { source: string; license: string }; // required — we are republishing
   technologies: string[];
   regions: string[];
 };
@@ -172,8 +177,8 @@ schema. The model supplies parameters only, never markup.
 
 ```ts
 type FigureTemplate = {
-  id: string;                      // never deleted or reused (see §11)
-  params_schema: z.ZodType;        // invalid params → figure dropped, report intact
+  id: string; // never deleted or reused (see §11)
+  params_schema: z.ZodType; // invalid params → figure dropped, report intact
   render: (params) => JSX;
 };
 ```
@@ -205,7 +210,7 @@ pipeline** (who curates, how updates land), **freshness metadata**
 ### 3.5 Retrieval
 
 Tag-filtered Postgres queries — region/tenure/housing/lane/technology
-are *categorical* keys, and the corpus is small and curated. No
+are _categorical_ keys, and the corpus is small and curated. No
 embeddings until the corpus outgrows tags; Supabase has pgvector built
 in, so the upgrade path is zero new infrastructure.
 
@@ -218,12 +223,12 @@ profile pre-fill plus a first message**, not just canned text:
 ```ts
 type Preset = {
   slug: string;
-  label: string;                   // "Lower my energy bills"
-  category: string;                // shown as chip grouping
-  first_message: string;           // sent as the user's opening message
+  label: string; // "Lower my energy bills"
+  category: string; // shown as chip grouping
+  first_message: string; // sent as the user's opening message
   profile_patches: ProfilePatch[]; // e.g. motivation weight hints,
-                                   // tech interest (stance: "curious"),
-                                   // provenance: "stated"
+  // tech interest (stance: "curious"),
+  // provenance: "stated"
   // targeting — which users see this preset
   tenures: ("owner" | "renter")[];
   regions: string[];
@@ -232,7 +237,7 @@ type Preset = {
 
 Picking "Lower my energy bills as a renter" doesn't just send a
 message — it nudges `motivation_weights` toward cost and records a
-tech/topic interest, so the extractor starts warm and the *first*
+tech/topic interest, so the extractor starts warm and the _first_
 agent turn already has real context instead of spending two turns
 rediscovering why the user came.
 
@@ -258,8 +263,8 @@ both the readiness function and the sidebar.
 type Slot<T> = {
   value: T | null;
   provenance: "stated" | "inferred" | "edited" | "propagated" | null;
-  confidence: "high" | "low";      // two levels; finer granularity is false precision
-  asked_at?: string;               // set when the agent asked — prevents re-asking
+  confidence: "high" | "low"; // two levels; finer granularity is false precision
+  asked_at?: string; // set when the agent asked — prevents re-asking
   updated_at: string;
 };
 ```
@@ -278,7 +283,7 @@ const SLOT_REGISTRY = {
     extractor_hint: "Whether the user owns or rents their home",
     sidebar: { label: "Your situation", group: "context" },
     durable: true,
-    elicitation: "upfront",          // see §4.8: collected before chat, not extracted
+    elicitation: "upfront", // see §4.8: collected before chat, not extracted
   },
   // adding a slot = adding an entry here, nothing else
 } satisfies Record<string, SlotDef>;
@@ -290,20 +295,20 @@ or `"either"`.
 
 Initial slots:
 
-| Group | Slot | Type | Durable |
-|---|---|---|---|
-| context | `tenure` | owner / renter / other | yes |
-| context | `housing_type` | single-family / apartment / condo / mobile | yes |
-| context | `region` | coarse: state/province — never an address | yes |
-| context | `household` | size, decision authority (sole/shared/landlord/hoa) | yes |
-| context | `existing_systems` | heating, cooling, has_solar, has_ev | yes |
-| intent | `motivation_weights` | vector, see §5 | yes (primary only) |
-| intent | `timeline` | ready-now / this-year / exploring | no |
-| intent | `budget_posture` | minimal / moderate / willing-to-invest (posture, not dollars) | no |
-| lists | `goals` | append-only, tagged free text | no |
-| lists | `constraints` | append-only, tagged free text | promotion rule, §4.6 |
-| lists | `preferences` | see 4.3 | propagation rule, §4.6 |
-| lists | `topics_discussed` | technology tags touched | no |
+| Group   | Slot                 | Type                                                          | Durable                |
+| ------- | -------------------- | ------------------------------------------------------------- | ---------------------- |
+| context | `tenure`             | owner / renter / other                                        | yes                    |
+| context | `housing_type`       | single-family / apartment / condo / mobile                    | yes                    |
+| context | `region`             | coarse: state/province — never an address                     | yes                    |
+| context | `household`          | size, decision authority (sole/shared/landlord/hoa)           | yes                    |
+| context | `existing_systems`   | heating, cooling, has_solar, has_ev                           | yes                    |
+| intent  | `motivation_weights` | vector, see §5                                                | yes (primary only)     |
+| intent  | `timeline`           | ready-now / this-year / exploring                             | no                     |
+| intent  | `budget_posture`     | minimal / moderate / willing-to-invest (posture, not dollars) | no                     |
+| lists   | `goals`              | append-only, tagged free text                                 | no                     |
+| lists   | `constraints`        | append-only, tagged free text                                 | promotion rule, §4.6   |
+| lists   | `preferences`        | see 4.3                                                       | propagation rule, §4.6 |
+| lists   | `topics_discussed`   | technology tags touched                                       | no                     |
 
 ### 4.3 Preferences (stances)
 
@@ -312,9 +317,9 @@ they can accept or decline). Facts (tenure, region) never get stances.
 
 ```ts
 type Preference = {
-  entity: string;                  // namespaced: "tech:solar", "approach:diy", "financing:loan"
+  entity: string; // namespaced: "tech:solar", "approach:diy", "financing:loan"
   stance: "curious" | "interested" | "priority" | "ruled_out";
-  note?: string;                   // "roof too shaded"
+  note?: string; // "roof too shaded"
   provenance: "stated" | "inferred" | "edited";
 };
 ```
@@ -326,7 +331,7 @@ Rules:
   playbook `priority_questions` into things the agent asks.
 - **Never infer `ruled_out` from silence.** A user who hasn't mentioned
   EVs has not declined them.
-- The composer must *cover* all `interested`+ technologies and remains
+- The composer must _cover_ all `interested`+ technologies and remains
   free to introduce unmentioned ones that score well — that's the app
   doing its job.
 - `ruled_out` is a suppression signal everywhere: the agent stops
@@ -356,7 +361,7 @@ function readiness(profile: SessionProfile, lane: LanePlaybook): ReadinessResult
 Deterministic, explainable, testable without a model. The `missing`
 array powers three things: the sidebar shows exactly what's unknown,
 the context builder tells the agent what to learn next, and the report
-button's disabled state can say *why*.
+button's disabled state can say _why_.
 
 **Ratchet policy:** persist `readiness_reached_at` on the session and
 never revoke a reached gate, even if a later schema change adds new
@@ -367,11 +372,11 @@ required slots. A gate that moves backwards reads as a bug.
 `profiles.durable_profile JSONB` holds only the slow-changing subset
 (registry `durable: true` slots), written at session end with explicit
 user opt-in. Goals, timeline, budget posture, and topics stay
-session-scoped — a new conversation is *for* those; copying them
+session-scoped — a new conversation is _for_ those; copying them
 would open session two with stale intent.
 
 **Consent granularity.** The session-end opt-in is a single yes/no,
-but rendered *with* the values shown ("Save: renter · Boston, MA ·
+but rendered _with_ the values shown ("Save: renter · Boston, MA ·
 gas heat · no solar?") so consent is informed. Per-slot control lives
 on the **read side** instead: at next session start, durable values
 arrive as `provenance: "propagated"`, `confidence: "low"`, shown as
@@ -430,7 +435,7 @@ Rules:
   change-pills pattern), one tap to confirm rather than re-answer.
 - **The bar for `upfront: true` is deliberately high.** Every added
   step costs conversion at the most fragile moment of the funnel. A
-  slot qualifies only if the *very first* response would mislead
+  slot qualifies only if the _very first_ response would mislead
   without it. Motivation, timeline, budget posture do not qualify —
   they're what the conversation is for. Expect this set to stay at
   two.
@@ -443,7 +448,11 @@ Rules:
 
 ```ts
 motivation_weights: Slot<{
-  cost: number; carbon: number; comfort: number; resilience: number; learning: number;
+  cost: number;
+  carbon: number;
+  comfort: number;
+  resilience: number;
+  learning: number;
 }>;
 // lane = argmax(weights) — derived, never stored as source of truth
 ```
@@ -463,33 +472,33 @@ sidebar shows motivation as editable.
 
 ### 5.2 The five lanes
 
-| Lane | User's core question | Report shape |
-|---|---|---|
-| `lower_bills` | "How do I spend less?" | Ranked by payback speed; quick wins first |
+| Lane             | User's core question                  | Report shape                                    |
+| ---------------- | ------------------------------------- | ----------------------------------------------- |
+| `lower_bills`    | "How do I spend less?"                | Ranked by payback speed; quick wins first       |
 | `climate_impact` | "What actually reduces my footprint?" | Ranked by carbon impact; honest about magnitude |
-| `comfort_health` | "Why is my home drafty/stuffy/cold?" | Problem-first: diagnose, then fix |
-| `resilience` | "What happens when the grid fails?" | Scenario-first: outages, backup, independence |
-| `learning` | "Help me understand this space" | A study guide, not an action plan |
+| `comfort_health` | "Why is my home drafty/stuffy/cold?"  | Problem-first: diagnose, then fix               |
+| `resilience`     | "What happens when the grid fails?"   | Scenario-first: outages, backup, independence   |
+| `learning`       | "Help me understand this space"       | A study guide, not an action plan               |
 
 ```ts
 type LanePlaybook = {
   id: LaneId;
-  required_slots: SlotName[];        // readiness gate (learning needs almost none)
-  priority_questions: SlotName[];    // what to probe next, in order
-  impact_weights: Weights;           // default weights when lane chosen explicitly
-  report_sections: SectionSpec[];    // order + framing of report
-  tone: string;                      // "lead with numbers" vs "lead with how-it-works"
+  required_slots: SlotName[]; // readiness gate (learning needs almost none)
+  priority_questions: SlotName[]; // what to probe next, in order
+  impact_weights: Weights; // default weights when lane chosen explicitly
+  report_sections: SectionSpec[]; // order + framing of report
+  tone: string; // "lead with numbers" vs "lead with how-it-works"
 };
 ```
 
 Notes:
 
-- **Lane ≠ persona.** Tenure is a *filter* on eligible components; lane
-  is a *sort/framing*. The current `PERSONA_NOTES` survives as the
+- **Lane ≠ persona.** Tenure is a _filter_ on eligible components; lane
+  is a _sort/framing_. The current `PERSONA_NOTES` survives as the
   filter axis.
 - **The `learning` lane is load-bearing**: it legitimizes users with no
   project intent, relaxes the readiness gate, and changes the report
-  *type* — preventing the system from pressuring browsers into fake
+  _type_ — preventing the system from pressuring browsers into fake
   action plans.
 
 ### 5.3 Chat behavior (context builder)
@@ -502,7 +511,7 @@ summary + lane playbook + stage + retrieved component summaries +
 
 On brevity: answer briefly and genuinely, end with a fork ("want the
 deeper version now, or shall I note it for your report?"), and always
-go deep when the user pushes. *"I'll explain that in the report"* as a
+go deep when the user pushes. _"I'll explain that in the report"_ as a
 stated policy reads as withholding. The conversation must stand on its
 own; the report earns the **organization**, not exclusive access to
 the substance.
@@ -543,7 +552,7 @@ to answer; and don't turn consecutive turns into a survey — the
 playbook's `priority_questions` should interleave with genuine
 conversation, not batch into a form.
 
-Persistence note: option buttons are message *parts* beyond plain
+Persistence note: option buttons are message _parts_ beyond plain
 text. The `messages` table currently stores `content TEXT` only; a
 nullable `parts JSONB` column (§10) carries the structured parts so
 history replays render the buttons (disabled) faithfully.
@@ -559,12 +568,12 @@ free-model reliability risk concentrates. Strict rules on both sides.
 
 ```ts
 type ComposerInput = {
-  profile: CompactProfile;             // ~300 tokens
+  profile: CompactProfile; // ~300 tokens
   motivation_weights: Weights;
-  framing: FramingSpec;                // from derived lane / mixed playbook
-  candidates: CandidateComponent[];    // the key input, see below
-  figure_templates: TemplateDescriptor[];  // ~4 allowed, id + schema + when-to-use
-  conversation_digest: string;         // 5-10 bullets, not the raw transcript
+  framing: FramingSpec; // from derived lane / mixed playbook
+  candidates: CandidateComponent[]; // the key input, see below
+  figure_templates: TemplateDescriptor[]; // ~4 allowed, id + schema + when-to-use
+  conversation_digest: string; // 5-10 bullets, not the raw transcript
 };
 ```
 
@@ -574,23 +583,23 @@ prerequisites-met), scores by
 `weights · impact + interest boost − effort penalty`, and passes the
 top ~15 as slug + title + summary + impact/effort only — never full
 bodies. The model cannot recommend outside this list; a bad model day
-produces a mediocre *ordering*, never a wrong *fact*.
+produces a mediocre _ordering_, never a wrong _fact_.
 
 ### 6.2 Output
 
 ```ts
 type ComposerOutput = {
   headline: string;
-  intro: string;                       // 2-3 personalized sentences
+  intro: string; // 2-3 personalized sentences
   items: {
-    component_slug: string;            // MUST be in candidates
+    component_slug: string; // MUST be in candidates
     rank: number;
-    reveal: boolean;                   // top 2-3 true — progressive disclosure decided here
-    personalization: string;           // why THIS user; no new facts or numbers
+    reveal: boolean; // top 2-3 true — progressive disclosure decided here
+    personalization: string; // why THIS user; no new facts or numbers
     figure?: { template_id: string; params: unknown };
   }[];
-  profile_gaps: string[];              // seeds follow-up prompts
-  readiness_note: string;              // honest "where you are" line
+  profile_gaps: string[]; // seeds follow-up prompts
+  readiness_note: string; // honest "where you are" line
 };
 ```
 
@@ -614,9 +623,9 @@ type ComposerOutput = {
 Split **selection** (small, structured, must be reliable) from
 **personalization** (prose, per item). Personalize only
 `reveal: true` items at generation time; when the follow-up engine
-reveals item #4 weeks later, personalize it *then*, against the profile
+reveals item #4 weeks later, personalize it _then_, against the profile
 as it exists at that moment. Cheaper, and late-revealed items are
-*better*. The follow-up addendum writer (§8.3) is this same
+_better_. The follow-up addendum writer (§8.3) is this same
 personalization call with a different preamble — one contract, two
 entry points.
 
@@ -641,7 +650,7 @@ contract with one extension:
   (§8.1).
 - **Code, not the model, decides where authoring is permitted.**
   `ComposerInput` gains `authoring_allowed_for`: the topic tags whose
-  candidate pool fell below threshold *for this profile*. An authored
+  candidate pool fell below threshold _for this profile_. An authored
   item outside those tags is dropped in validation — same posture as
   the slug whitelist. The model fills sanctioned gaps only; it cannot
   choose to bypass curated content.
@@ -674,13 +683,13 @@ defined end.
 
 ```ts
 type ReportDocument = {
-  meta:        { doc_version, generated_at, lane_framing, readiness };
-  about_you:   ProfileSnapshot;        // deterministic — rendered from profile slots
-  your_goals:  { headline, intro };    // model-authored (composer output)
-  background:  BackgroundEntry[];      // selected explainer components
-  action_plan: ActionItemRef[];        // item references — rendered live, see below
-  open_questions: string[];            // composer's profile_gaps
-  sources:     SourceCitation[];       // deterministic — union of components' sources
+  meta: { doc_version; generated_at; lane_framing; readiness };
+  about_you: ProfileSnapshot; // deterministic — rendered from profile slots
+  your_goals: { headline; intro }; // model-authored (composer output)
+  background: BackgroundEntry[]; // selected explainer components
+  action_plan: ActionItemRef[]; // item references — rendered live, see below
+  open_questions: string[]; // composer's profile_gaps
+  sources: SourceCitation[]; // deterministic — union of components' sources
 };
 ```
 
@@ -689,10 +698,10 @@ type ReportDocument = {
   this on"); errors in it are user-correctable.
 - **`background`** is where explainer components get a home (2–4
   matching `topics_discussed`). It flexes by lane: in `learning` it
-  *is* the report; in `lower_bills` it collapses to a couple of
+  _is_ the report; in `lower_bills` it collapses to a couple of
   entries. The playbook's `report_sections` controls this.
 - **Frozen vs live:** `meta`, `about_you`, `your_goals`, `background`
-  freeze at generation. `action_plan` stores item *references* and the
+  freeze at generation. `action_plan` stores item _references_ and the
   web renderer joins against current item state. That mechanism is
   what makes one artifact both a milestone and a starting point.
 
@@ -719,7 +728,7 @@ client-side jsPDF path.
 ## 8. The follow-up engine
 
 Reframe: **the report stops being the artifact and becomes a view.**
-The durable artifact is a set of *action items* the user owns; follow-up
+The durable artifact is a set of _action items_ the user owns; follow-up
 sessions are how items evolve.
 
 ### 8.1 Items as first-class rows
@@ -784,7 +793,7 @@ gets spent), and the item's event history. The agent's mission changes:
    living report grows in place.
 3. **New suggested items + profile patches** — e.g. a heat-pump
    deep-dive that surfaces a 100-amp panel adds a constraint to the
-   durable profile *and* may surface the "panel upgrade" component as a
+   durable profile _and_ may surface the "panel upgrade" component as a
    new prerequisite item.
 
 One coherent plan per user; the original report stays frozen ("here's
@@ -798,8 +807,8 @@ what we told you and when") while the item list is alive.
    load.
 2. **Content-based (the differentiated one):** component `version` bump
    or approaching `expires` → find active `action_items` referencing
-   that slug → notify. *"The rebate program tied to your heat-pump item
-   was updated"* falls out of `component_slug + component_version` for
+   that slug → notify. _"The rebate program tied to your heat-pump item
+   was updated"_ falls out of `component_slug + component_version` for
    free.
 3. **Time-based (last):** snooze wake-ups, periodic check-ins. Needs
    Vercel cron or Supabase `pg_cron`, real email (e.g. Resend), a
@@ -816,7 +825,7 @@ Rule: **guest state lives in localStorage in exactly the shapes the
 database rows would have.**
 
 - **Chat + extraction:** the guest endpoint stays stateless; the client
-  sends messages *and* current profile; the server runs the same
+  sends messages _and_ current profile; the server runs the same
   extraction and returns profile patches in the response stream; the
   client applies and persists locally. Zero DB writes.
 - **Sidebar, readiness, lanes:** pure functions — identical experience.
@@ -827,8 +836,8 @@ database rows would have.**
   triggers don't exist for guests.
 
 That degradation list is the signup pitch, delivered at maximum-value
-moment: *"Sign up to keep this plan — track your steps anywhere, and
-we'll tell you when the programs behind your recommendations change."*
+moment: _"Sign up to keep this plan — track your steps anywhere, and
+we'll tell you when the programs behind your recommendations change."_
 Migration on signup is one idempotent server function inserting the
 localStorage profile/report/items under the new `user_id` — a
 transform-free copy. **Build the migration function with the guest
@@ -884,14 +893,14 @@ Two mechanisms, applied consistently:
 2. **Tolerant, normalize-on-read parsing** — old saved data never
    breaks and never needs a migration.
 
-| Axis | Registry | Add = | Never |
-|---|---|---|---|
-| Profile slots | `SLOT_REGISTRY` | one entry (schema, extractor hint, sidebar, durable flag all derive) | rename/repurpose a key; narrow an enum |
-| Preferences | entity namespace vocabulary | a string convention | reuse a namespace with new meaning |
-| Lanes | playbook registry | playbook + weight dimension + **impact backfill across the library** (deliberately expensive — a content-curation project) | remove a lane id |
-| Figure templates | template registry | template + schema | delete or reuse an id (retired ids keep a "figure unavailable" or successor entry) |
-| Content tags | vocabulary file (CI-validated) | one line | repurpose a tag |
-| Report document | `doc_version` in `meta` | new optional sections | drop the ability to render any historical version |
+| Axis             | Registry                       | Add =                                                                                                                      | Never                                                                              |
+| ---------------- | ------------------------------ | -------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| Profile slots    | `SLOT_REGISTRY`                | one entry (schema, extractor hint, sidebar, durable flag all derive)                                                       | rename/repurpose a key; narrow an enum                                             |
+| Preferences      | entity namespace vocabulary    | a string convention                                                                                                        | reuse a namespace with new meaning                                                 |
+| Lanes            | playbook registry              | playbook + weight dimension + **impact backfill across the library** (deliberately expensive — a content-curation project) | remove a lane id                                                                   |
+| Figure templates | template registry              | template + schema                                                                                                          | delete or reuse an id (retired ids keep a "figure unavailable" or successor entry) |
+| Content tags     | vocabulary file (CI-validated) | one line                                                                                                                   | repurpose a tag                                                                    |
+| Report document  | `doc_version` in `meta`        | new optional sections                                                                                                      | drop the ability to render any historical version                                  |
 
 **Normalize-on-read** is the only viable mechanism because profiles
 also live in guest localStorage — you can't run a SQL migration over
@@ -908,7 +917,7 @@ Consequences for saved data, summarized:
   (the agent asks about gaps — better than any backfill).
 - Readiness ratchets (§4.5) — reached gates are never revoked.
 - Old reports are frozen; items pin `component_version`; content
-  updates surface as staleness *signals*, never mutations of past
+  updates surface as staleness _signals_, never mutations of past
   advice. Extending the system makes old reports quieter, never wrong.
 - Extractor drift on existing slots is the subtle risk of adding slots
   — covered by the extraction eval fixtures (§6.5), run on every
@@ -964,7 +973,7 @@ advice.
    triggers) → follow-up sessions → content-based triggers →
    time-based reminders/email.
 
-Guest parity and the signup migration function ship *with* each phase
+Guest parity and the signup migration function ship _with_ each phase
 (same shapes), not as a separate phase. Within phase 3–4 the strict
 order is: library → composer → items → follow-up sessions → triggers,
 because items only make sense once reports are component-based.

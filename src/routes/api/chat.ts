@@ -2,11 +2,7 @@ import { createOpenRouterModel } from "@/lib/ai-gateway.server";
 import { buildSystemPrompt, type Persona } from "@/lib/prompts/chat";
 import { createClient } from "@supabase/supabase-js";
 import { createFileRoute } from "@tanstack/react-router";
-import {
-  convertToModelMessages,
-  streamText,
-  type UIMessage,
-} from "ai";
+import { convertToModelMessages, streamText, type UIMessage } from "ai";
 import type { Database } from "@/integrations/supabase/types";
 
 type Body = {

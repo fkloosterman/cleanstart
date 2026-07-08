@@ -18,12 +18,7 @@ const TENURE_LABEL: Record<NonNullable<Tenure>, string> = {
   curious: "exploring (not sure yet)",
 };
 
-function buildContextSystem(
-  tenureValue: string,
-  city: string,
-  state: string,
-  utility: string,
-) {
+function buildContextSystem(tenureValue: string, city: string, state: string, utility: string) {
   return `You are Clean Start, a friendly and knowledgeable clean energy guide for households. Your job is to educate — never to sell. Keep answers conversational, plain-language, and under 120 words.
 
 The user has already provided the following information during onboarding. Do NOT ask for any of this again under any circumstances:
@@ -98,10 +93,14 @@ export const Route = createFileRoute("/api/public/chat-guest")({
         // Safety log: if any of these read "not provided", the bug is in how
         // onboarding persists tenure/location, not in this handler.
         console.log(
-          "Injecting context — tenure:", tenureValue,
-          "city:", city,
-          "state:", state,
-          "utility:", utility,
+          "Injecting context — tenure:",
+          tenureValue,
+          "city:",
+          city,
+          "state:",
+          state,
+          "utility:",
+          utility,
         );
 
         // When onboarding context exists, skip the base prompt's DISCOVERY

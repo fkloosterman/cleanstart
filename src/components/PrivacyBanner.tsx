@@ -18,13 +18,16 @@ export function PrivacyBanner() {
       <div className="mx-auto flex max-w-4xl items-start gap-3 px-4 py-2.5 text-sm text-primary-dark">
         <ShieldCheck className="mt-0.5 h-4 w-4 flex-shrink-0" />
         <p className="flex-1">
-          Clean Start does not sell your data, track you across the web, or recommend specific vendors.
-          Your conversation is private.
+          Clean Start does not sell your data, track you across the web, or recommend specific
+          vendors. Your conversation is private.
         </p>
         <button
           type="button"
           aria-label="Dismiss"
-          onClick={() => { localStorage.setItem(KEY, "1"); setShow(false); }}
+          onClick={() => {
+            localStorage.setItem(KEY, "1");
+            setShow(false);
+          }}
           className="rounded p-1 text-primary-dark/70 hover:bg-white/40 hover:text-primary-dark"
         >
           <X className="h-4 w-4" />

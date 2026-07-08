@@ -148,8 +148,8 @@ function GuestChatPage() {
         <div className="mb-3 flex items-start gap-2 rounded-lg border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
           <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" />
           <p>
-            You're chatting as a guest. Messages stay in this browser only — nothing is saved
-            to your account, and you won't be able to generate a report.{" "}
+            You're chatting as a guest. Messages stay in this browser only — nothing is saved to
+            your account, and you won't be able to generate a report.{" "}
             <Link to="/chat" className="underline underline-offset-4">
               Sign in
             </Link>{" "}
