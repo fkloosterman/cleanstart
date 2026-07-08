@@ -193,11 +193,13 @@ the whole loop before doing it solo.
    ```
    bun run dev      # exercise the feature in the browser
    bun run lint      # catch lint errors
+   bun run test      # run the automated test suite
    ```
 
-   Manually click through the feature and any adjacent flows that were
-   touched — there's no automated test suite yet, so this is the main
-   safety net.
+   Also manually click through the feature and any adjacent flows that
+   were touched — automated coverage is mandatory for pure logic modules
+   but optional for UI components (see `AGENTS.md`), so manual testing is
+   still the main safety net for UI changes.
 
 4. **Commit**
 
