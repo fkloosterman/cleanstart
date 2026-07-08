@@ -73,13 +73,18 @@ When someone sends a chat message:
 
 ### 3.3 Where you can run this
 
-The exact same codebase now runs in two places:
+The exact same codebase now runs in three places:
 - **Locally**, on any developer's own computer, for day-to-day development — see `ONBOARDING.md` for setup.
-- **In production**, on Vercel, for real users.
+- **On staging**, deployed automatically by Vercel from the `dev` branch, for testing integrated work before it reaches users.
+- **In production**, on Vercel, built from the `mvp` branch, for real users.
 
 There's no Lovable-based editing on this codebase going forward; Lovable remains connected to a separate, unrelated repo (`jreddy777/cleanstart`) that this project doesn't sync with. See `AGENTS.md` for the branch/contribution model.
 
-**Important**: both of the above currently point at the *same* Supabase database. This is convenient, but it means everyone is sharing one live dataset. Structural changes to the database (adding/removing/renaming tables or fields) need to be made deliberately and coordinated with the team — a change made by one person immediately affects everyone else using the same database.
+**Two databases.** There are two separate Supabase projects:
+- a **dev project**, used by local development and the staging deployment. It contains no real user data, so developers can experiment freely — including destructive database experiments — without coordinating with anyone.
+- a **production project**, used only by the production deployment. It holds real user data and is changed only deliberately, at release time ("promotion" of `dev` into `mvp`), by one person following the process in `DATABASE.md`.
+
+This means a mistake during development can no longer touch real users' data.
 
 ### 3.4 Secrets and configuration
 
@@ -87,7 +92,7 @@ The app needs a handful of credentials to run, split into two kinds:
 - **Public values** (safe to have in a local config file): the Supabase project's public web address and public API key.
 - **Private secrets** (never shared or committed to code): a Supabase key that bypasses normal access rules (used only by server-side code), and the OpenRouter API key.
 
-See `.env.example` in the repo for the full list and where each one goes. In production, these are configured directly in Vercel's project settings.
+See `.env.example` in the repo for the full list and where each one goes. In Vercel, these are configured per environment: the **Production** environment's variables point at the production Supabase project, and the **Preview** environment's variables (used by the `dev` staging deployment and PR previews) point at the dev Supabase project. Local `.env` files also point at the dev project.
 
 ## 4. Where things stand / what's next
 
