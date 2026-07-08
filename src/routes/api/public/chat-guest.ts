@@ -1,4 +1,4 @@
-import { createOpenRouterModel } from "@/lib/ai-gateway.server";
+import { createModelForPurpose } from "@/lib/ai-gateway.server";
 import { buildSystemPrompt, type Persona } from "@/lib/prompts/chat";
 import { createFileRoute } from "@tanstack/react-router";
 import { convertToModelMessages, streamText, type UIMessage } from "ai";
@@ -113,7 +113,7 @@ export const Route = createFileRoute("/api/public/chat-guest")({
         });
         const system = `${buildContextSystem(tenureValue, city, state, utility)}\n\n${baseSystem}`;
 
-        const model = createOpenRouterModel(OPENROUTER_API_KEY);
+        const model = createModelForPurpose("chat", OPENROUTER_API_KEY);
 
         const result = streamText({
           model,

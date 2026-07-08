@@ -1,5 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
-import { createOpenRouterModel } from "@/lib/ai-gateway.server";
+import { createModelForPurpose } from "@/lib/ai-gateway.server";
 import { buildReportPrompt } from "@/lib/prompts/report";
 import { generateText } from "ai";
 import { z } from "zod";
@@ -74,7 +74,7 @@ export const generateGuestReport = createServerFn({ method: "POST" })
 
     const persona = data.tenure ?? null;
 
-    const model = createOpenRouterModel(OPENROUTER_API_KEY);
+    const model = createModelForPurpose("composition", OPENROUTER_API_KEY);
 
     const { text } = await generateText({
       model,
