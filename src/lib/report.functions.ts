@@ -42,7 +42,7 @@ function extractJson(raw: string): unknown {
     .replace(/```json\s*/gi, "")
     .replace(/```\s*/g, "")
     .trim();
-  const start = s.search(/[\{\[]/);
+  const start = s.search(/[{[]/);
   const end = Math.max(s.lastIndexOf("}"), s.lastIndexOf("]"));
   if (start === -1 || end === -1) throw new Error("Model did not return JSON");
   s = s.substring(start, end + 1);
@@ -52,6 +52,9 @@ function extractJson(raw: string): unknown {
     s = s
       .replace(/,\s*}/g, "}")
       .replace(/,\s*]/g, "]")
+      // Control characters are matched deliberately: models sometimes emit
+      // them inside JSON strings, where they are invalid.
+      // eslint-disable-next-line no-control-regex
       .replace(/[\x00-\x1F\x7F]/g, "");
     return JSON.parse(s);
   }
