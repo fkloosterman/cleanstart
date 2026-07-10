@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from "react";
-import { Link } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
 import { Leaf, Menu, TriangleAlert, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/use-auth";
@@ -25,12 +25,21 @@ const NAV = [
 
 export function AppShell({ children }: { children: ReactNode }) {
   const { user, signOut, loading } = useAuth();
+  const navigate = useNavigate();
   const [authOpen, setAuthOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   // Migrate a guest's conversation + profile into their account on sign-in,
   // from whatever route auth lands on (WP1.9, incl. the OAuth/email-confirm
   // redirects). Mounted here because AppShell wraps every route.
   useGuestMigration();
+
+  // Sign out lands on home, not the current (now-forbidden) page — signing out
+  // on a session/history route would otherwise drop the user on a "sign in to
+  // continue" wall.
+  const handleSignOut = async () => {
+    await signOut();
+    navigate({ to: "/" });
+  };
   const nav = NAV.filter((n) => n.to !== "/history" || user);
 
   return (
@@ -61,7 +70,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 
           <div className="hidden items-center gap-2 md:flex">
             {loading ? null : user ? (
-              <Button variant="ghost" size="sm" onClick={signOut}>
+              <Button variant="ghost" size="sm" onClick={handleSignOut}>
                 Sign out
               </Button>
             ) : (
@@ -102,7 +111,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                     className="w-full justify-start"
                     onClick={() => {
                       setMenuOpen(false);
-                      signOut();
+                      handleSignOut();
                     }}
                   >
                     Sign out
