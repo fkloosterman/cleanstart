@@ -9,13 +9,19 @@ import { AuthModal } from "@/components/AuthModal";
 import { previewGuardMessage } from "@/lib/preview-guard";
 
 // Where sign-out lands, by current route. Pages that look the same for guests
-// and signed-in users (home, resources, about, the guest chat start) stay put;
-// pages that gate or differ for signed-out users send the user somewhere
-// usable. A specific chat session and the signed-in-only History both funnel
-// to the guest chat, the natural "keep using the app" destination.
-function signOutRedirect(pathname: string): "/chat" | null {
+// and signed-in users (home, resources, about, the guest chat start, the
+// example/guest/bare report views) stay put; pages that gate or differ for a
+// signed-out user funnel to the guest chat — the natural "keep using the app"
+// destination.
+function signOutRedirect(pathname: string, search: Record<string, unknown>): "/chat" | null {
   if (pathname.startsWith("/chat/")) return "/chat"; // a specific session
   if (pathname === "/history" || pathname.startsWith("/history/")) return "/chat";
+  // Only the authenticated report view (a sessionId, without example/guest)
+  // walls a signed-out user; the example, guest, and bare /report pages render
+  // fine without auth.
+  if (pathname === "/report" && search.sessionId && !search.example && !search.guest) {
+    return "/chat";
+  }
   return null; // stay put
 }
 
@@ -38,7 +44,7 @@ const NAV = [
 export function AppShell({ children }: { children: ReactNode }) {
   const { user, signOut, loading } = useAuth();
   const navigate = useNavigate();
-  const { pathname } = useLocation();
+  const location = useLocation();
   const [authOpen, setAuthOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   // Migrate a guest's conversation + profile into their account on sign-in,
@@ -51,7 +57,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const handleSignOut = async () => {
     await signOut();
     toast.success("Signed out");
-    const dest = signOutRedirect(pathname);
+    const dest = signOutRedirect(location.pathname, location.search as Record<string, unknown>);
     if (dest) navigate({ to: dest });
   };
   const nav = NAV.filter((n) => n.to !== "/history" || user);
