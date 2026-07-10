@@ -1,11 +1,23 @@
 import { useState, type ReactNode } from "react";
-import { Link, useNavigate } from "@tanstack/react-router";
+import { Link, useNavigate, useLocation } from "@tanstack/react-router";
 import { Leaf, Menu, TriangleAlert, X } from "lucide-react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/use-auth";
 import { useGuestMigration } from "@/hooks/use-guest-migration";
 import { AuthModal } from "@/components/AuthModal";
 import { previewGuardMessage } from "@/lib/preview-guard";
+
+// Where sign-out lands, by current route. Pages that look the same for guests
+// and signed-in users (home, resources, about, the guest chat start) stay put;
+// pages that gate or differ for signed-out users send the user somewhere
+// usable. A specific chat session and the signed-in-only History both funnel
+// to the guest chat, the natural "keep using the app" destination.
+function signOutRedirect(pathname: string): "/chat" | null {
+  if (pathname.startsWith("/chat/")) return "/chat"; // a specific session
+  if (pathname === "/history" || pathname.startsWith("/history/")) return "/chat";
+  return null; // stay put
+}
 
 // Vercel inlines VITE_-prefixed system env vars into the client bundle (when
 // "Automatically expose System Environment Variables" is enabled); locally
@@ -26,6 +38,7 @@ const NAV = [
 export function AppShell({ children }: { children: ReactNode }) {
   const { user, signOut, loading } = useAuth();
   const navigate = useNavigate();
+  const { pathname } = useLocation();
   const [authOpen, setAuthOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   // Migrate a guest's conversation + profile into their account on sign-in,
@@ -33,12 +46,13 @@ export function AppShell({ children }: { children: ReactNode }) {
   // redirects). Mounted here because AppShell wraps every route.
   useGuestMigration();
 
-  // Sign out lands on home, not the current (now-forbidden) page — signing out
-  // on a session/history route would otherwise drop the user on a "sign in to
-  // continue" wall.
+  // Sign out, confirm it, and redirect away from any page that would now wall
+  // the user (session/history) — otherwise leave them where they are.
   const handleSignOut = async () => {
     await signOut();
-    navigate({ to: "/" });
+    toast.success("Signed out");
+    const dest = signOutRedirect(pathname);
+    if (dest) navigate({ to: dest });
   };
   const nav = NAV.filter((n) => n.to !== "/history" || user);
 
