@@ -82,6 +82,55 @@ describe("parsePatchArray — tolerant (§4.4)", () => {
       expect(parsePatchArray(text), JSON.stringify(text)).toEqual([]);
     }
   });
+
+  it("salvages valid siblings when one element is corrupt JSON", () => {
+    // One glitched object must not discard the whole turn's patches.
+    const text =
+      '[{"op":"set","slot":"timeline","value":"this-year","provenance":"stated"},' +
+      " {BROKEN not json}," +
+      '{"op":"append","slot":"goals","value":{"text":"cut bill"},"provenance":"stated"}]';
+    const patches = parsePatchArray(text);
+    expect(patches).toHaveLength(2);
+    expect(patches).toContainEqual({
+      op: "set",
+      slot: "timeline",
+      value: "this-year",
+      provenance: "stated",
+    });
+    // The nested value object stays intact through per-object salvage.
+    expect(patches).toContainEqual({
+      op: "append",
+      slot: "goals",
+      value: { text: "cut bill" },
+      provenance: "stated",
+    });
+  });
+
+  it("salvages around real field corruption (a rogue glitch token)", () => {
+    // Verbatim shapes observed from a weak free model: a mangled key
+    // (`richtet'` for `"op"`) and an injected Unicode char (`嘎`) each
+    // invalidate their own object but not their siblings.
+    const richtet =
+      '[{"op":"set","slot":"housing_type","value":"apartment","provenance":"stated"},' +
+      '{"op":"set","slot":"timeline","value":"this-year","provenance":"stated"},' +
+      '{richtet\': "append","slot":"goals","value":{"text":"cut bill"},"provenance":"stated"}]';
+    expect(parsePatchArray(richtet)).toHaveLength(2);
+
+    const glitch =
+      '[{"op":"set","slot":"housing_type","value":"apartment","provenance":"stated"},' +
+      '{"op":嘎set","slot":"timeline","value":"this-year","provenance":"stated"}]';
+    // The first (clean) object survives; the second is dropped.
+    expect(parsePatchArray(glitch)).toContainEqual({
+      op: "set",
+      slot: "housing_type",
+      value: "apartment",
+      provenance: "stated",
+    });
+  });
+
+  it("returns [] when every element is corrupt", () => {
+    expect(parsePatchArray("[{bad}, {also bad}, {nope]")).toEqual([]);
+  });
 });
 
 describe("sanitizeExtractedPatches — provenance gate", () => {
@@ -161,6 +210,18 @@ describe("extractProfilePatches — failure policy (done-when)", () => {
     const patches = await extractProfilePatches(emptyProfile(), { user: "I rent" }, gen(text));
     const { profile, rejected } = applyPatches(emptyProfile(), patches);
     expect(rejected).toEqual([]);
+    expect(profile.tenure.value).toBe("renter");
+    expect(profile.goals.value).toEqual([{ text: "cut my bill" }]);
+  });
+
+  it("still applies the valid patches from a partially corrupt response", async () => {
+    // A glitched middle object must not cost the clean ones their effect.
+    const text =
+      '[{"op":"set","slot":"tenure","value":"renter","provenance":"stated"},' +
+      '{"op":嘎set","slot":"timeline","value":"this-year","provenance":"stated"},' +
+      '{"op":"append","slot":"goals","value":{"text":"cut my bill"},"provenance":"stated"}]';
+    const patches = await extractProfilePatches(emptyProfile(), { user: "I rent" }, gen(text));
+    const { profile } = applyPatches(emptyProfile(), patches);
     expect(profile.tenure.value).toBe("renter");
     expect(profile.goals.value).toEqual([{ text: "cut my bill" }]);
   });
