@@ -1,5 +1,5 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport, type UIMessage } from "ai";
 import { useAuth } from "@/hooks/use-auth";
@@ -13,11 +13,16 @@ import {
   GUEST_TENURE_KEY,
   GUEST_LOCATION_KEY,
   GUEST_PROFILE_KEY,
+  GUEST_READINESS_KEY,
   readGuestProfile,
   writeGuestProfile,
+  readGuestReadinessReachedAt,
+  writeGuestReadinessReachedAt,
   clearGuestState,
 } from "@/lib/guest-storage";
+import { missingSlotLabels } from "@/lib/profile/readiness-gate";
 import { useSessionProfile } from "@/hooks/use-session-profile";
+import { useReadinessGate } from "@/hooks/use-readiness-gate";
 import { ProfilePanel } from "@/components/ProfileSidebar";
 import { PrivacyBanner } from "@/components/PrivacyBanner";
 import {
@@ -196,6 +201,16 @@ function ChatPage() {
   // persists every change to localStorage via writeGuestProfile.
   const profileStore = useSessionProfile(emptyProfile(), writeGuestProfile);
 
+  // Guest readiness ratchet (WP1.7, §4.5): the localStorage twin of
+  // sessions.readiness_reached_at. Hydrated from storage after mount (below),
+  // stamped the first time the gate opens, and cleared on start-over.
+  const [reachedAt, setReachedAt] = useState<string | null>(null);
+  const stampReadiness = useCallback((at: string) => {
+    setReachedAt(at);
+    writeGuestReadinessReachedAt(at);
+  }, []);
+  const gate = useReadinessGate(profileStore.profile, reachedAt, stampReadiness);
+
   useEffect(() => {
     if (typeof window === "undefined") {
       setInitialMessages([]);
@@ -224,6 +239,8 @@ function ChatPage() {
     } catch {
       // ignore
     }
+    // Rehydrate the readiness ratchet so a reload keeps the report unlocked.
+    setReachedAt(readGuestReadinessReachedAt());
   }, []);
 
   const transport = useMemo(
@@ -329,10 +346,12 @@ function ChatPage() {
     setTenure(null);
     setZipStepDone(false);
     setLocation(null);
+    setReachedAt(null);
     try {
       window.localStorage.removeItem(GUEST_TENURE_KEY);
       window.localStorage.removeItem(GUEST_LOCATION_KEY);
       window.localStorage.removeItem(GUEST_PROFILE_KEY);
+      window.localStorage.removeItem(GUEST_READINESS_KEY);
     } catch {
       // ignore
     }
@@ -359,6 +378,7 @@ function ChatPage() {
     setTenure(null);
     setLocation(null);
     setZipStepDone(false);
+    setReachedAt(null);
     clearGuestState();
   };
 
@@ -487,7 +507,7 @@ function ChatPage() {
                     <RotateCcw className="mr-1 h-4 w-4" /> Start over
                   </Button>
                 </div>
-                {messages.filter((m) => m.role === "assistant").length >= 3 && (
+                {gate.open ? (
                   <Button
                     variant="outline"
                     size="sm"
@@ -511,8 +531,26 @@ function ChatPage() {
                   >
                     <FileText className="mr-1 h-4 w-4" /> Generate report
                   </Button>
+                ) : (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled
+                    title={`Still need: ${missingSlotLabels(gate.missing).join(", ")}`}
+                  >
+                    <FileText className="mr-1 h-4 w-4" /> Generate report
+                  </Button>
                 )}
               </div>
+              {/* What still gates the report (WP1.7) — visible, not just a tooltip. */}
+              {!gate.open && (
+                <p className="mb-3 text-center text-xs text-muted-foreground">
+                  Your report unlocks once we know:{" "}
+                  <span className="font-medium text-foreground">
+                    {missingSlotLabels(gate.missing).join(", ")}
+                  </span>
+                </p>
+              )}
               <Conversation className="flex-1">
                 <ConversationContent className="px-0">
                   <div className="flex flex-col gap-6">

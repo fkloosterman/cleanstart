@@ -5,6 +5,7 @@ import { extractProfilePatches } from "@/lib/profile/extractor";
 import { createExtractionGenerate } from "@/lib/profile/extractor.server";
 import { normalizeProfile } from "@/lib/profile/normalize";
 import { applyPatches } from "@/lib/profile/patches";
+import { readiness } from "@/lib/profile/readiness";
 import { PROFILE_PATCH_PART_TYPE } from "@/lib/profile/stream";
 import { createClient } from "@supabase/supabase-js";
 import { createFileRoute } from "@tanstack/react-router";
@@ -74,7 +75,7 @@ export const Route = createFileRoute("/api/chat")({
         // round-trip so the per-turn extractor can patch onto it (WP1.5).
         const { data: session, error: sessErr } = await supabase
           .from("sessions")
-          .select("id, title, user_id, profile")
+          .select("id, title, user_id, profile, readiness_reached_at")
           .eq("id", sessionId)
           .maybeSingle();
         if (sessErr || !session || session.user_id !== userId) {
@@ -105,17 +106,20 @@ export const Route = createFileRoute("/api/chat")({
           }
         }
 
+        // The profile the extractor patches onto — normalized on read, so an
+        // old or junk-shaped column heals rather than blocks (§11).
+        const currentProfile = normalizeProfile(session.profile);
+
         const assistantTurnCount = messages.filter((m) => m.role === "assistant").length;
         const system = buildSystemPrompt({
           persona: body.persona ?? null,
           assistantTurnCount,
+          // Nudge the agent toward the slots that still gate the report (WP1.7).
+          missing: readiness(currentProfile).missing,
         });
 
         const model = createModelForPurpose("chat", OPENROUTER_API_KEY);
         const modelMessages = await convertToModelMessages(messages);
-        // The profile the extractor patches onto — normalized on read, so an
-        // old or junk-shaped column heals rather than blocks (§11).
-        const currentProfile = normalizeProfile(session.profile);
         const extract = createExtractionGenerate(OPENROUTER_API_KEY);
 
         const stream = createUIMessageStream({
@@ -158,12 +162,22 @@ export const Route = createFileRoute("/api/chat")({
             if (patches.length === 0) return;
 
             const { profile: updated } = applyPatches(currentProfile, patches);
+            // Ratchet (§4.5): stamp the first turn readiness is reached so a
+            // later edit that drops a required slot can't re-lock the report.
+            // Once set, it is never cleared or moved.
+            const reachedNow =
+              !session.readiness_reached_at && readiness(updated).ready
+                ? new Date().toISOString()
+                : null;
             const { error: profileErr } = await supabase
               .from("sessions")
               // JSONB column; the tolerant slot envelopes carry unknown-indexed
               // values that don't line up with the generated `Json` type, so
               // cast at this boundary (round-tripped by normalizeProfile on read).
-              .update({ profile: updated as unknown as Json })
+              .update({
+                profile: updated as unknown as Json,
+                ...(reachedNow ? { readiness_reached_at: reachedNow } : {}),
+              })
               .eq("id", sessionId);
             if (profileErr) {
               console.error("[/api/chat] profile persist failed, skipping:", profileErr);

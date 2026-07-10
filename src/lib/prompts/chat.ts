@@ -1,3 +1,5 @@
+import { SLOT_REGISTRY, type SlotName } from "@/lib/profile/registry";
+
 export type Persona = "renter" | "homeowner" | "curious" | null;
 
 const BASE = `You are Clean Start — a calm, plain-language guide that helps households understand clean energy options (solar, heat pumps, EVs, home efficiency upgrades).
@@ -31,9 +33,17 @@ const STAGES = {
 export function buildSystemPrompt({
   persona,
   assistantTurnCount,
+  missing = [],
 }: {
   persona: Persona;
   assistantTurnCount: number;
+  /**
+   * Required-but-unfilled slots from the readiness gate (WP1.7). Surfaced
+   * as a "still need to learn" nudge so the agent probes the gaps that keep
+   * the report locked. The full context-builder rewrite is WP2.2 — this is
+   * only the hint.
+   */
+  missing?: SlotName[];
 }) {
   const stage =
     assistantTurnCount < 2
@@ -44,5 +54,9 @@ export function buildSystemPrompt({
   const personaNote = persona
     ? PERSONA_NOTES[persona]
     : "The user has not picked a persona yet — ask gently if helpful.";
-  return [BASE, personaNote, stage].join("\n\n");
+  const learnLabels = missing.map((name) => SLOT_REGISTRY[name].sidebar.label).join(", ");
+  const learnNote = learnLabels
+    ? `Still need to learn: ${learnLabels}. When it fits naturally, ask a gentle question that fills one of these — don't interrogate.`
+    : null;
+  return [BASE, personaNote, stage, learnNote].filter(Boolean).join("\n\n");
 }

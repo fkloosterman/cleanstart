@@ -10,8 +10,10 @@ import type { Json } from "@/integrations/supabase/types";
 import { createSession } from "@/lib/sessions";
 import { emptyProfile, normalizeProfile } from "@/lib/profile/normalize";
 import type { SessionProfile } from "@/lib/profile/registry";
+import { missingSlotLabels } from "@/lib/profile/readiness-gate";
 import { PROFILE_PATCH_PART_TYPE, readProfilePatchData } from "@/lib/profile/stream";
 import { useSessionProfile } from "@/hooks/use-session-profile";
+import { useReadinessGate } from "@/hooks/use-readiness-gate";
 import { ProfilePanel } from "@/components/ProfileSidebar";
 import { AuthModal } from "@/components/AuthModal";
 import { PrivacyBanner } from "@/components/PrivacyBanner";
@@ -80,6 +82,7 @@ function ChatSessionPage() {
   const [initialMessages, setInitialMessages] = useState<UIMessage[] | null>(null);
   const [persona, setPersona] = useState<string | null>(searchPersona ?? null);
   const [initialProfile, setInitialProfile] = useState<SessionProfile>(emptyProfile);
+  const [initialReachedAt, setInitialReachedAt] = useState<string | null>(null);
   const [notFound, setNotFound] = useState(false);
 
   useEffect(() => {
@@ -89,8 +92,13 @@ function ChatSessionPage() {
     let cancelled = false;
     (async () => {
       const [sessionRes, msgRes, profileRes] = await Promise.all([
-        // Load the session profile (WP1.6) so the sidebar renders from it.
-        supabase.from("sessions").select("id, user_id, profile").eq("id", sessionId).maybeSingle(),
+        // Load the session profile (WP1.6) + readiness stamp (WP1.7) so the
+        // sidebar and the report gate render from them.
+        supabase
+          .from("sessions")
+          .select("id, user_id, profile, readiness_reached_at")
+          .eq("id", sessionId)
+          .maybeSingle(),
         supabase
           .from("messages")
           .select("id, role, content, created_at")
@@ -106,6 +114,7 @@ function ChatSessionPage() {
       // Normalize on read: an old or junk-shaped column heals rather than
       // blocks (§11).
       setInitialProfile(normalizeProfile(sessionRes.data.profile));
+      setInitialReachedAt(sessionRes.data.readiness_reached_at);
       setInitialMessages((msgRes.data ?? []).map(rowToUIMessage));
       setPersona((prev) => prev ?? profileRes.data?.persona ?? null);
     })();
@@ -162,6 +171,7 @@ function ChatSessionPage() {
       sessionId={sessionId}
       initialMessages={initialMessages}
       initialProfile={initialProfile}
+      initialReachedAt={initialReachedAt}
       persona={persona}
       initialMessage={initialMessage}
       user={user}
@@ -174,6 +184,7 @@ function ChatConversation({
   sessionId,
   initialMessages,
   initialProfile,
+  initialReachedAt,
   persona,
   initialMessage,
   user,
@@ -182,6 +193,7 @@ function ChatConversation({
   sessionId: string;
   initialMessages: UIMessage[];
   initialProfile: SessionProfile;
+  initialReachedAt: string | null;
   persona: string | null;
   initialMessage: string | undefined;
   user: User;
@@ -190,6 +202,11 @@ function ChatConversation({
   const navigate = useNavigate();
   const [feedbackSent, setFeedbackSent] = useState(false);
   const [creatingNext, setCreatingNext] = useState(false);
+  // The readiness ratchet stamp (§4.5). Seeded from the loaded session and
+  // remembered locally the moment the gate first opens, so a within-session
+  // edit that drops a required slot can't re-lock the report. The DB stamp is
+  // written server-side per turn (api/chat.ts) — this is the read-side memory.
+  const [reachedAt, setReachedAt] = useState<string | null>(initialReachedAt);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const sentInitialRef = useRef(false);
 
@@ -206,6 +223,11 @@ function ChatConversation({
         if (error) console.error("[chat] profile persist failed", error);
       });
   });
+
+  // Report gate (WP1.7): unlocks on information sufficiency, not turn count,
+  // and ratchets — once open it stays open. onReach only remembers the stamp
+  // locally; the server already persisted it to sessions.readiness_reached_at.
+  const gate = useReadinessGate(profileStore.profile, reachedAt, setReachedAt);
 
   const transport = useMemo(
     () =>
@@ -315,15 +337,34 @@ function ChatConversation({
                 {creatingNext ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : null}
                 New chat
               </Button>
-              {messages.filter((m) => m.role === "assistant").length >= 3 && (
+              {gate.open ? (
                 <Button variant="outline" size="sm" asChild>
                   <Link to="/report" search={{ sessionId } as never}>
                     <FileText className="mr-1 h-4 w-4" /> Generate report
                   </Link>
                 </Button>
+              ) : (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled
+                  title={`Still need: ${missingSlotLabels(gate.missing).join(", ")}`}
+                >
+                  <FileText className="mr-1 h-4 w-4" /> Generate report
+                </Button>
               )}
             </div>
           </div>
+
+          {/* What still gates the report (WP1.7) — visible, not just a tooltip. */}
+          {!gate.open && messages.length > 0 && (
+            <p className="mb-3 text-center text-xs text-muted-foreground">
+              Your report unlocks once we know:{" "}
+              <span className="font-medium text-foreground">
+                {missingSlotLabels(gate.missing).join(", ")}
+              </span>
+            </p>
+          )}
 
           {/* Transcript */}
           <Conversation className="flex-1 rounded-2xl border border-border bg-card">
