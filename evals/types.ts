@@ -1,4 +1,5 @@
 import type { ModelPurpose } from "@/lib/model-map";
+import type { SlotName } from "@/lib/profile/registry";
 
 /**
  * One eval assertion against the model's text output. Extend this union as
@@ -10,7 +11,12 @@ export type EvalAssertion =
   | { kind: "matches"; pattern: string; flags?: string }
   | { kind: "json-parses" };
 
-export interface EvalFixture {
+/**
+ * A text fixture: send system+prompt to the purpose's model, assert on the
+ * raw reply. `type` is optional for backward compatibility (absent = text).
+ */
+export interface TextFixture {
+  type?: "text";
   /** Shown in the report; defaults are per-file, so keep it unique per file. */
   name: string;
   /** Which model-map purpose this call uses (chat / extraction / composition). */
@@ -20,5 +26,37 @@ export interface EvalFixture {
   assertions: EvalAssertion[];
 }
 
+/** Backward-compatible alias — the original fixture shape (WP0.5). */
+export type EvalFixture = TextFixture;
+
+/**
+ * An assertion on the profile that results from running the extractor over a
+ * fixture's exchange and applying the returned patches (§6.5). Transcript →
+ * expected profile.
+ */
+export type ExtractionExpectation =
+  | { kind: "slot-filled"; slot: SlotName }
+  | { kind: "slot-empty"; slot: SlotName }
+  | { kind: "slot-value"; slot: SlotName; value: unknown }
+  | { kind: "list-includes"; slot: SlotName; text: string };
+// WP2.3 adds preference/motivation expectation kinds when the extractor
+// learns motivation weights and technology stances.
+
+/**
+ * An extraction fixture: a starting profile plus the latest exchange; the
+ * runner extracts patches, applies them, and checks the resulting profile.
+ * Always uses the `extraction` purpose.
+ */
+export interface ExtractionFixture {
+  type: "extraction";
+  name: string;
+  /** Raw starting profile (normalized before use). Omit for an empty profile. */
+  base?: unknown;
+  exchange: { user: string; assistant?: string };
+  expect: ExtractionExpectation[];
+}
+
+export type AnyFixture = TextFixture | ExtractionFixture;
+
 /** A fixture file default-exports one fixture or an array of them. */
-export type EvalFixtureModule = EvalFixture | EvalFixture[];
+export type EvalFixtureModule = AnyFixture | AnyFixture[];

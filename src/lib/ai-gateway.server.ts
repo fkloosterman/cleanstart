@@ -11,7 +11,10 @@ const DEFAULT_OPENROUTER_URL = "https://openrouter.ai/api/v1";
  */
 export function createModelForPurpose(purpose: ModelPurpose, openRouterApiKey: string) {
   const config = resolveModelConfig(purpose, process.env);
-  const baseURL = process.env.OPENROUTER_URL ?? DEFAULT_OPENROUTER_URL;
+  // `||` not `??`: an empty OPENROUTER_URL (the .env.example default) means
+  // "unset", same as model-map treats the model vars — otherwise the base URL
+  // becomes "" and every request URL fails to parse.
+  const baseURL = process.env.OPENROUTER_URL || DEFAULT_OPENROUTER_URL;
 
   const provider = createOpenAICompatible({
     name: "openrouter",
