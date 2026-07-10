@@ -14,7 +14,12 @@ import { useEffect, useRef } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/use-auth";
-import { clearGuestState, readGuestMessages, readGuestProfile } from "@/lib/guest-storage";
+import {
+  clearGuestState,
+  readGuestMessages,
+  readGuestProfile,
+  readGuestReadinessReachedAt,
+} from "@/lib/guest-storage";
 import { guestMessagesFromUI, migrateGuestSession } from "@/lib/guest-migration";
 
 export function useGuestMigration() {
@@ -31,9 +36,10 @@ export function useGuestMigration() {
     if (messages.length === 0) return; // nothing to migrate
     ranRef.current = true;
     const profile = readGuestProfile();
+    const readinessReachedAt = readGuestReadinessReachedAt();
     void (async () => {
       try {
-        const result = await migrateGuestSession(user.id, messages, profile);
+        const result = await migrateGuestSession(user.id, messages, profile, readinessReachedAt);
         // Stop using local state; clearing also makes a repeat migration a
         // no-op even if this hook runs again.
         clearGuestState();

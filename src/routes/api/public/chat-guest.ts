@@ -3,6 +3,7 @@ import { buildSystemPrompt, type Persona } from "@/lib/prompts/chat";
 import { extractProfilePatches } from "@/lib/profile/extractor";
 import { createExtractionGenerate } from "@/lib/profile/extractor.server";
 import { normalizeProfile } from "@/lib/profile/normalize";
+import { readiness } from "@/lib/profile/readiness";
 import { PROFILE_PATCH_PART_TYPE } from "@/lib/profile/stream";
 import { createFileRoute } from "@tanstack/react-router";
 import {
@@ -126,19 +127,20 @@ export const Route = createFileRoute("/api/public/chat-guest")({
         // stage (which instructs the model to ask getting-to-know-you
         // questions) by pushing the turn counter past it.
         const contextKnownBoost = (tenure ? 1 : 0) + (location ? 1 : 0);
+        // Extraction inputs: the profile the client sent (normalized on read,
+        // so an old/junk shape heals) and this turn's user message. The client
+        // owns persistence — the server just returns patches on the stream.
+        const currentProfile = normalizeProfile(body.profile);
         const baseSystem = buildSystemPrompt({
           persona: body.persona ?? personaFromTenure,
           assistantTurnCount: assistantTurnCount + contextKnownBoost,
+          // Nudge the agent toward the slots that still gate the report (WP1.7).
+          missing: readiness(currentProfile).missing,
         });
         const system = `${buildContextSystem(tenureValue, city, state, utility)}\n\n${baseSystem}`;
 
         const model = createModelForPurpose("chat", OPENROUTER_API_KEY);
         const modelMessages = await convertToModelMessages(trimmed);
-
-        // Extraction inputs: the profile the client sent (normalized on read,
-        // so an old/junk shape heals) and this turn's user message. The client
-        // owns persistence — the server just returns patches on the stream.
-        const currentProfile = normalizeProfile(body.profile);
         const lastUser = [...trimmed].reverse().find((m) => m.role === "user");
         const lastUserText = lastUser ? textOf(lastUser) : "";
         const extract = createExtractionGenerate(OPENROUTER_API_KEY);

@@ -21,6 +21,7 @@ import type { UIMessage } from "ai";
 import { supabase } from "@/integrations/supabase/client";
 import { createSession } from "@/lib/sessions";
 import { slotFilled } from "@/lib/profile/normalize";
+import { readiness } from "@/lib/profile/readiness";
 import { SLOT_NAMES, type SessionProfile } from "@/lib/profile/registry";
 
 export interface GuestMessage {
@@ -69,13 +70,21 @@ export async function migrateGuestSession(
   userId: string,
   messages: GuestMessage[],
   profile: SessionProfile,
+  /** The guest's readiness stamp, if the gate was reached (§4.5, WP1.7). */
+  readinessReachedAt: string | null,
 ): Promise<GuestMigrationResult | null> {
   const hasMessages = messages.length > 0;
   if (!hasMessages && !profileHasData(profile)) return null;
 
+  // Carry the ratchet: an explicit guest stamp wins, but if the migrated
+  // profile is already ready without one (older guest data), stamp it now so
+  // the report doesn't silently re-lock after signup.
+  const reachedAt =
+    readinessReachedAt ?? (readiness(profile).ready ? new Date().toISOString() : null);
+
   // Seed the session with the migrated profile (same JSONB cast as the
   // per-turn extractor path; round-tripped by normalizeProfile on read).
-  const sessionId = await createSession(userId, profile);
+  const sessionId = await createSession(userId, profile, reachedAt);
 
   if (hasMessages) {
     const base = Date.now();

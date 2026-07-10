@@ -11,6 +11,9 @@ import type { SessionProfile } from "@/lib/profile/registry";
 export async function createSession(
   userId: string,
   initialProfile?: SessionProfile,
+  /** Seed the readiness ratchet (§4.5) — used when migrating a guest whose
+   * gate was already reached (WP1.9). Omitted for fresh sessions. */
+  readinessReachedAt?: string | null,
 ): Promise<string> {
   const { data, error } = await supabase
     .from("sessions")
@@ -20,6 +23,7 @@ export async function createSession(
     .insert({
       user_id: userId,
       ...(initialProfile ? { profile: initialProfile as unknown as Json } : {}),
+      ...(readinessReachedAt ? { readiness_reached_at: readinessReachedAt } : {}),
     })
     .select("id")
     .single();
