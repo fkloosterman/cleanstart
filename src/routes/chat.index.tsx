@@ -5,6 +5,7 @@ import { DefaultChatTransport, type UIMessage } from "ai";
 import { useAuth } from "@/hooks/use-auth";
 import { supabase } from "@/integrations/supabase/client";
 import { createSession } from "@/lib/sessions";
+import { profileFromUpfront, type UpfrontInput } from "@/lib/profile/upfront";
 import { PrivacyBanner } from "@/components/PrivacyBanner";
 import {
   Conversation,
@@ -44,6 +45,17 @@ export const Route = createFileRoute("/chat/")({
 const STORAGE_KEY = "cleanstart.chat.v1";
 const TENURE_KEY = "cleanstart.tenure.v1";
 const LOCATION_KEY = "cleanstart.location.v1";
+// The guest session profile (§9): same shape as sessions.profile, seeded
+// here from the upfront slots (WP1.3) and extended by extraction (WP1.5).
+const PROFILE_KEY = "cleanstart.profile.v1";
+
+/** The upfront steps as the profile mapper consumes them (§4.8). */
+function toUpfrontInput(tenure: Tenure | null, location: Location | null): UpfrontInput {
+  return {
+    tenure,
+    location: location ? { zip: location.zip, city: location.city, state: location.state } : null,
+  };
+}
 
 type Tenure = "homeowner" | "renter" | "curious";
 type Location = {
@@ -238,6 +250,24 @@ function ChatPage() {
     }
   }, [messages, initialMessages]);
 
+  // Guests: keep the localStorage profile's upfront slots in sync with the
+  // stepper. Signed-in users' profile lives in sessions.profile (seeded at
+  // session creation in handleSend). WP1.5 extends this to merge extraction
+  // patches onto the stored profile rather than reseeding from upfront only.
+  useEffect(() => {
+    if (typeof window === "undefined" || initialMessages === null || user) return;
+    try {
+      if (tenure === null && location === null) {
+        window.localStorage.removeItem(PROFILE_KEY);
+        return;
+      }
+      const profile = profileFromUpfront(toUpfrontInput(tenure, location));
+      window.localStorage.setItem(PROFILE_KEY, JSON.stringify(profile));
+    } catch {
+      // ignore
+    }
+  }, [tenure, location, user, initialMessages]);
+
   useEffect(() => {
     if (status === "ready") inputRef.current?.focus();
   }, [status]);
@@ -264,6 +294,7 @@ function ChatPage() {
     try {
       window.localStorage.removeItem(TENURE_KEY);
       window.localStorage.removeItem(LOCATION_KEY);
+      window.localStorage.removeItem(PROFILE_KEY);
     } catch {
       // ignore
     }
@@ -294,6 +325,7 @@ function ChatPage() {
       window.localStorage.removeItem(STORAGE_KEY);
       window.localStorage.removeItem(TENURE_KEY);
       window.localStorage.removeItem(LOCATION_KEY);
+      window.localStorage.removeItem(PROFILE_KEY);
     } catch {
       // ignore
     }
@@ -327,10 +359,13 @@ function ChatPage() {
 
     if (user) {
       // Signed in: create a real session and hand off the first message to
-      // the persisted chat page instead of the ephemeral guest flow.
+      // the persisted chat page instead of the ephemeral guest flow. Seed
+      // the session profile with the upfront slots (§4.8) so the two are
+      // populated before the first message is answered.
       setCreatingSession(true);
       try {
-        const sessionId = await createSession(user.id);
+        const initialProfile = profileFromUpfront(toUpfrontInput(effectiveTenure, location));
+        const sessionId = await createSession(user.id, initialProfile);
         navigate({
           to: "/chat/$sessionId",
           params: { sessionId },
