@@ -1,10 +1,21 @@
 import { createModelForPurpose } from "@/lib/ai-gateway.server";
 import { previewGuardMessage } from "@/lib/preview-guard";
 import { buildSystemPrompt, type Persona } from "@/lib/prompts/chat";
+import { extractProfilePatches } from "@/lib/profile/extractor";
+import { createExtractionGenerate } from "@/lib/profile/extractor.server";
+import { normalizeProfile } from "@/lib/profile/normalize";
+import { applyPatches } from "@/lib/profile/patches";
+import { PROFILE_PATCH_PART_TYPE } from "@/lib/profile/stream";
 import { createClient } from "@supabase/supabase-js";
 import { createFileRoute } from "@tanstack/react-router";
-import { convertToModelMessages, streamText, type UIMessage } from "ai";
-import type { Database } from "@/integrations/supabase/types";
+import {
+  convertToModelMessages,
+  createUIMessageStream,
+  createUIMessageStreamResponse,
+  streamText,
+  type UIMessage,
+} from "ai";
+import type { Database, Json } from "@/integrations/supabase/types";
 
 type Body = {
   sessionId?: string;
@@ -59,10 +70,11 @@ export const Route = createFileRoute("/api/chat")({
           return new Response("Bad request", { status: 400 });
         }
 
-        // Verify session ownership
+        // Verify session ownership; load the current profile in the same
+        // round-trip so the per-turn extractor can patch onto it (WP1.5).
         const { data: session, error: sessErr } = await supabase
           .from("sessions")
-          .select("id, title, user_id")
+          .select("id, title, user_id, profile")
           .eq("id", sessionId)
           .maybeSingle();
         if (sessErr || !session || session.user_id !== userId) {
@@ -70,8 +82,9 @@ export const Route = createFileRoute("/api/chat")({
         }
 
         const lastUser = [...messages].reverse().find((m) => m.role === "user");
+        const lastUserText = lastUser ? textOf(lastUser) : "";
         if (lastUser) {
-          const content = textOf(lastUser);
+          const content = lastUserText;
           if (content) {
             await supabase.from("messages").insert({
               session_id: sessionId,
@@ -99,34 +112,75 @@ export const Route = createFileRoute("/api/chat")({
         });
 
         const model = createModelForPurpose("chat", OPENROUTER_API_KEY);
+        const modelMessages = await convertToModelMessages(messages);
+        // The profile the extractor patches onto — normalized on read, so an
+        // old or junk-shaped column heals rather than blocks (§11).
+        const currentProfile = normalizeProfile(session.profile);
+        const extract = createExtractionGenerate(OPENROUTER_API_KEY);
 
-        const result = streamText({
-          model,
-          system,
-          messages: await convertToModelMessages(messages),
-        });
-
-        return result.toUIMessageStreamResponse({
+        const stream = createUIMessageStream({
           originalMessages: messages,
-          onFinish: async ({ responseMessage }) => {
-            const text = textOf(responseMessage);
-            if (text) {
+          execute: async ({ writer }) => {
+            const result = streamText({ model, system, messages: modelMessages });
+            // Forward the reply as it streams — zero added time-to-first-token.
+            writer.merge(result.toUIMessageStream());
+
+            // Everything below runs only once the reply has fully streamed. A
+            // stream failure is already surfaced to the client via the merge;
+            // bail out rather than double-report or extract from a broken turn.
+            let assistantText = "";
+            try {
+              assistantText = (await result.text).trim();
+            } catch (err) {
+              console.error("[/api/chat] reply stream failed:", err);
+              return;
+            }
+            if (assistantText) {
               await supabase.from("messages").insert({
                 session_id: sessionId,
                 role: "assistant",
-                content: text,
+                content: assistantText,
               });
               await supabase
                 .from("sessions")
                 .update({ updated_at: new Date().toISOString() })
                 .eq("id", sessionId);
             }
+
+            // Per-turn extraction (WP1.4). Never throws and never blocks the
+            // reply the user already saw; a bad model response yields [].
+            if (!lastUserText) return;
+            const patches = await extractProfilePatches(
+              currentProfile,
+              { user: lastUserText, assistant: assistantText || undefined },
+              extract,
+            );
+            if (patches.length === 0) return;
+
+            const { profile: updated } = applyPatches(currentProfile, patches);
+            const { error: profileErr } = await supabase
+              .from("sessions")
+              // JSONB column; the tolerant slot envelopes carry unknown-indexed
+              // values that don't line up with the generated `Json` type, so
+              // cast at this boundary (round-tripped by normalizeProfile on read).
+              .update({ profile: updated as unknown as Json })
+              .eq("id", sessionId);
+            if (profileErr) {
+              console.error("[/api/chat] profile persist failed, skipping:", profileErr);
+              return;
+            }
+            // Ride the same stream as a transient side-channel so a live
+            // sidebar (WP1.6) can reflect the update without a reload; it is
+            // not part of the message and is never persisted client-side.
+            writer.write({ type: PROFILE_PATCH_PART_TYPE, data: { patches }, transient: true });
           },
           onError: (error) => {
             console.error("[/api/chat] stream error", error);
             return error instanceof Error ? error.message : "Stream error";
           },
         });
+
+        return createUIMessageStreamResponse({ stream });
       },
     },
   },
