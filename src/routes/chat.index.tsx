@@ -7,9 +7,10 @@ import { supabase } from "@/integrations/supabase/client";
 import { createSession } from "@/lib/sessions";
 import { profileFromUpfront, type UpfrontInput } from "@/lib/profile/upfront";
 import { emptyProfile, normalizeProfile } from "@/lib/profile/normalize";
-import { applyPatches } from "@/lib/profile/patches";
 import type { SessionProfile } from "@/lib/profile/registry";
 import { PROFILE_PATCH_PART_TYPE, readProfilePatchData } from "@/lib/profile/stream";
+import { useSessionProfile } from "@/hooks/use-session-profile";
+import { ProfilePanel } from "@/components/ProfileSidebar";
 import { PrivacyBanner } from "@/components/PrivacyBanner";
 import {
   Conversation,
@@ -207,6 +208,12 @@ function ChatPage() {
   const [input, setInput] = useState("");
   const [creatingSession, setCreatingSession] = useState(false);
 
+  // Reactive guest profile (WP1.6): starts empty and is hydrated from
+  // localStorage after mount (below), kept in sync by the upfront stepper
+  // and per-turn extraction (onData), and edited by the sidebar. The hook
+  // persists every change to localStorage via writeStoredProfile.
+  const profileStore = useSessionProfile(emptyProfile(), writeStoredProfile);
+
   useEffect(() => {
     if (typeof window === "undefined") {
       setInitialMessages([]);
@@ -273,10 +280,19 @@ function ChatPage() {
       if (part.type !== PROFILE_PATCH_PART_TYPE) return;
       const patches = readProfilePatchData(part.data);
       if (patches.length === 0) return;
-      const { profile } = applyPatches(readStoredProfile(), patches);
-      writeStoredProfile(profile);
+      // Lift into React state (and persist) so the sidebar re-renders live.
+      profileStore.applyProfilePatches(patches);
     },
   });
+
+  // Hydrate the reactive profile from localStorage once on the client. The
+  // transport still reads localStorage directly at send time, so this only
+  // drives the sidebar UI; state and storage stay in sync via the hook.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    profileStore.setProfile(readStoredProfile());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     if (typeof window === "undefined" || initialMessages === null) return;
@@ -294,16 +310,14 @@ function ChatPage() {
   // (WP1.5, applied in onData) accumulate rather than being reset each render.
   useEffect(() => {
     if (typeof window === "undefined" || initialMessages === null || user) return;
-    try {
-      if (tenure === null && location === null) {
-        window.localStorage.removeItem(PROFILE_KEY);
-        return;
-      }
-      const profile = profileFromUpfront(toUpfrontInput(tenure, location), readStoredProfile());
-      writeStoredProfile(profile);
-    } catch {
-      // ignore
+    if (tenure === null && location === null) {
+      profileStore.setProfile(emptyProfile());
+      return;
     }
+    // Apply the upfront patches onto the current profile (not a fresh one) so
+    // extraction patches accumulated this session survive; the hook persists.
+    profileStore.setProfile((prev) => profileFromUpfront(toUpfrontInput(tenure, location), prev));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tenure, location, user, initialMessages]);
 
   useEffect(() => {
@@ -429,6 +443,10 @@ function ChatPage() {
 
   const hasMessages = messages.length > 0;
   const step: 1 | 2 | 3 | 4 = hasMessages ? 4 : !tenure ? 1 : !zipStepDone ? 2 : 3;
+  // The profile sidebar shows for guests once the conversation is underway.
+  // Signed-in users are handed off to a persisted session (chat.$sessionId),
+  // which renders its own sidebar from sessions.profile.
+  const showProfile = step === 4 && !user;
 
   if (authLoading || !recentSessionChecked || creatingSession) {
     return (
@@ -441,160 +459,177 @@ function ChatPage() {
   return (
     <>
       <PrivacyBanner />
-      <div className="mx-auto flex h-[calc(100vh-12rem)] min-h-[500px] max-w-3xl flex-col px-4 pb-4 pt-4">
-        {user && recentSession && step !== 4 && (
-          <div className="mb-4 flex flex-col gap-3 rounded-xl border border-primary/30 bg-primary-light/30 p-4 sm:flex-row sm:items-center sm:justify-between">
-            <div className="min-w-0">
-              <p className="text-sm font-medium text-foreground">Welcome back</p>
-              <p className="truncate text-xs text-muted-foreground">
-                Continue "{recentSession.title}", or start something new below.
-              </p>
-            </div>
-            <div className="flex shrink-0 gap-2">
-              <Button size="sm" onClick={goToRecentSession}>
-                Continue chat
-              </Button>
-              <Button size="sm" variant="outline" onClick={startBlankSession}>
-                Start new chat
-              </Button>
-            </div>
-          </div>
+      <div
+        className={cn(
+          "mx-auto flex w-full flex-col px-4 lg:flex-row lg:gap-4",
+          showProfile ? "max-w-6xl" : "max-w-3xl",
         )}
-        {step === 4 ? (
-          <>
-            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-              <div className="flex flex-wrap items-center gap-2">
-                {tenure && (
-                  <span className="inline-flex items-center gap-1.5 rounded-full border border-primary/40 bg-primary-light/40 px-3 py-1 text-xs font-medium text-primary-dark">
-                    {(() => {
-                      const Icon = TENURE_META[tenure].icon;
-                      return <Icon className="h-3.5 w-3.5" />;
-                    })()}
-                    {TENURE_META[tenure].label}
-                  </span>
-                )}
-                {location && (
-                  <span className="inline-flex items-center gap-1.5 rounded-full border border-primary/40 bg-primary-light/40 px-3 py-1 text-xs font-medium text-primary-dark">
-                    <MapPin className="h-3.5 w-3.5" />
-                    {location.city}, {location.state}
-                  </span>
-                )}
-                <Button variant="ghost" size="sm" onClick={handleStartOver}>
-                  <RotateCcw className="mr-1 h-4 w-4" /> Start over
+      >
+        <div className="flex h-[calc(100vh-12rem)] min-h-[500px] w-full max-w-3xl flex-1 flex-col pb-4 pt-4 lg:order-1">
+          {user && recentSession && step !== 4 && (
+            <div className="mb-4 flex flex-col gap-3 rounded-xl border border-primary/30 bg-primary-light/30 p-4 sm:flex-row sm:items-center sm:justify-between">
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-foreground">Welcome back</p>
+                <p className="truncate text-xs text-muted-foreground">
+                  Continue "{recentSession.title}", or start something new below.
+                </p>
+              </div>
+              <div className="flex shrink-0 gap-2">
+                <Button size="sm" onClick={goToRecentSession}>
+                  Continue chat
+                </Button>
+                <Button size="sm" variant="outline" onClick={startBlankSession}>
+                  Start new chat
                 </Button>
               </div>
-              {messages.filter((m) => m.role === "assistant").length >= 3 && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => {
-                    try {
-                      const transcript = messages
-                        .map((m) => ({
-                          role: m.role,
-                          content: m.parts.map((p) => (p.type === "text" ? p.text : "")).join(""),
-                        }))
-                        .filter((m) => m.content.trim().length > 0);
-                      window.sessionStorage.setItem(
-                        "cleanstart.guest-report.v1",
-                        JSON.stringify({ tenure, location, messages: transcript }),
-                      );
-                    } catch {
-                      // ignore
-                    }
-                    navigate({ to: "/report", search: { guest: true } });
-                  }}
-                >
-                  <FileText className="mr-1 h-4 w-4" /> Generate report
-                </Button>
-              )}
             </div>
-            <Conversation className="flex-1">
-              <ConversationContent className="px-0">
-                <div className="flex flex-col gap-6">
-                  {messages.map((m) => {
-                    const isUser = m.role === "user";
-                    const text = m.parts.map((p) => (p.type === "text" ? p.text : "")).join("");
-                    return (
-                      <div
-                        key={m.id}
-                        className={cn("flex flex-col gap-1", isUser ? "items-end" : "items-start")}
-                      >
-                        <span className="px-1 text-xs text-muted-foreground">
-                          {isUser ? "You" : "Clean Start"}
-                        </span>
+          )}
+          {step === 4 ? (
+            <>
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  {tenure && (
+                    <span className="inline-flex items-center gap-1.5 rounded-full border border-primary/40 bg-primary-light/40 px-3 py-1 text-xs font-medium text-primary-dark">
+                      {(() => {
+                        const Icon = TENURE_META[tenure].icon;
+                        return <Icon className="h-3.5 w-3.5" />;
+                      })()}
+                      {TENURE_META[tenure].label}
+                    </span>
+                  )}
+                  {location && (
+                    <span className="inline-flex items-center gap-1.5 rounded-full border border-primary/40 bg-primary-light/40 px-3 py-1 text-xs font-medium text-primary-dark">
+                      <MapPin className="h-3.5 w-3.5" />
+                      {location.city}, {location.state}
+                    </span>
+                  )}
+                  <Button variant="ghost" size="sm" onClick={handleStartOver}>
+                    <RotateCcw className="mr-1 h-4 w-4" /> Start over
+                  </Button>
+                </div>
+                {messages.filter((m) => m.role === "assistant").length >= 3 && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      try {
+                        const transcript = messages
+                          .map((m) => ({
+                            role: m.role,
+                            content: m.parts.map((p) => (p.type === "text" ? p.text : "")).join(""),
+                          }))
+                          .filter((m) => m.content.trim().length > 0);
+                        window.sessionStorage.setItem(
+                          "cleanstart.guest-report.v1",
+                          JSON.stringify({ tenure, location, messages: transcript }),
+                        );
+                      } catch {
+                        // ignore
+                      }
+                      navigate({ to: "/report", search: { guest: true } });
+                    }}
+                  >
+                    <FileText className="mr-1 h-4 w-4" /> Generate report
+                  </Button>
+                )}
+              </div>
+              <Conversation className="flex-1">
+                <ConversationContent className="px-0">
+                  <div className="flex flex-col gap-6">
+                    {messages.map((m) => {
+                      const isUser = m.role === "user";
+                      const text = m.parts.map((p) => (p.type === "text" ? p.text : "")).join("");
+                      return (
                         <div
+                          key={m.id}
                           className={cn(
-                            "max-w-[85%] rounded-2xl px-4 py-3 text-sm",
-                            isUser
-                              ? "rounded-br-sm bg-primary text-primary-foreground"
-                              : "rounded-bl-sm border border-border bg-card text-foreground",
+                            "flex flex-col gap-1",
+                            isUser ? "items-end" : "items-start",
                           )}
                         >
-                          {isUser ? (
-                            <p className="whitespace-pre-wrap">{text}</p>
-                          ) : (
-                            <MessageResponse>{text}</MessageResponse>
-                          )}
+                          <span className="px-1 text-xs text-muted-foreground">
+                            {isUser ? "You" : "Clean Start"}
+                          </span>
+                          <div
+                            className={cn(
+                              "max-w-[85%] rounded-2xl px-4 py-3 text-sm",
+                              isUser
+                                ? "rounded-br-sm bg-primary text-primary-foreground"
+                                : "rounded-bl-sm border border-border bg-card text-foreground",
+                            )}
+                          >
+                            {isUser ? (
+                              <p className="whitespace-pre-wrap">{text}</p>
+                            ) : (
+                              <MessageResponse>{text}</MessageResponse>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                    {status === "submitted" && (
+                      <div className="flex flex-col gap-1 items-start">
+                        <span className="px-1 text-xs text-muted-foreground">Clean Start</span>
+                        <div className="max-w-[85%] rounded-2xl rounded-bl-sm border border-border bg-card px-4 py-3">
+                          <TypingDots />
                         </div>
                       </div>
-                    );
-                  })}
-                  {status === "submitted" && (
-                    <div className="flex flex-col gap-1 items-start">
-                      <span className="px-1 text-xs text-muted-foreground">Clean Start</span>
-                      <div className="max-w-[85%] rounded-2xl rounded-bl-sm border border-border bg-card px-4 py-3">
-                        <TypingDots />
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </ConversationContent>
-              <ConversationScrollButton />
-            </Conversation>
-          </>
-        ) : (
-          <div className="flex-1 overflow-y-auto">
-            {step === 1 && <TenureStep onPick={pickTenure} />}
-            {step === 2 && <ZipStep onDone={handleLocationResolved} />}
-            {step === 3 && (
-              <ChipsStep
-                tenure={tenure!}
-                location={location}
-                onPick={handleSend}
-                onChangeTenure={resetTenure}
-                onChangeZip={resetZip}
-                disabled={isBusy}
-              />
-            )}
-          </div>
-        )}
+                    )}
+                  </div>
+                </ConversationContent>
+                <ConversationScrollButton />
+              </Conversation>
+            </>
+          ) : (
+            <div className="flex-1 overflow-y-auto">
+              {step === 1 && <TenureStep onPick={pickTenure} />}
+              {step === 2 && <ZipStep onDone={handleLocationResolved} />}
+              {step === 3 && (
+                <ChipsStep
+                  tenure={tenure!}
+                  location={location}
+                  onPick={handleSend}
+                  onChangeTenure={resetTenure}
+                  onChangeZip={resetZip}
+                  disabled={isBusy}
+                />
+              )}
+            </div>
+          )}
 
-        <div className="mt-3 border-t border-border pt-3">
-          <div className="relative">
-            <textarea
-              ref={inputRef}
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={handleKeyDown}
-              rows={1}
-              placeholder="Ask anything about clean energy…"
-              className="w-full resize-none rounded-full border border-border bg-card py-3 pl-5 pr-14 text-sm shadow-sm placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
-            />
-            <button
-              type="button"
-              onClick={() => handleSend(input)}
-              disabled={!input.trim() || isBusy}
-              aria-label="Send message"
-              className="absolute right-1.5 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full bg-primary text-primary-foreground transition hover:bg-primary-dark disabled:opacity-40"
-            >
-              <ArrowUp className="h-4 w-4" />
-            </button>
+          <div className="mt-3 border-t border-border pt-3">
+            <div className="relative">
+              <textarea
+                ref={inputRef}
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={handleKeyDown}
+                rows={1}
+                placeholder="Ask anything about clean energy…"
+                className="w-full resize-none rounded-full border border-border bg-card py-3 pl-5 pr-14 text-sm shadow-sm placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+              />
+              <button
+                type="button"
+                onClick={() => handleSend(input)}
+                disabled={!input.trim() || isBusy}
+                aria-label="Send message"
+                className="absolute right-1.5 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full bg-primary text-primary-foreground transition hover:bg-primary-dark disabled:opacity-40"
+              >
+                <ArrowUp className="h-4 w-4" />
+              </button>
+            </div>
+            <p className="mt-2 text-center text-xs text-muted-foreground">
+              No account required · your conversations stay private
+            </p>
           </div>
-          <p className="mt-2 text-center text-xs text-muted-foreground">
-            No account required · your conversations stay private
-          </p>
         </div>
+        {showProfile && (
+          <ProfilePanel
+            profile={profileStore.profile}
+            onEdit={profileStore.applyProfilePatches}
+            className="mt-4 max-h-[calc(100vh-12rem)] lg:order-2"
+          />
+        )}
       </div>
     </>
   );
