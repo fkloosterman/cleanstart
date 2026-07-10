@@ -104,6 +104,8 @@ See `.env.example` in the repo for the full list and where each one goes. In Ver
 
 **Transitional rule, until the global Preview values are flipped to the dev project:** don't use the Vercel preview of a `wp/*` feature branch to test against a database — it runs against production. Test locally (your `.env` → dev project) and on the `dev` staging deployment after merge. If a specific feature branch genuinely needs a working preview, add branch-scoped Preview variables for that exact branch name in Vercel, pointing at the dev project.
 
+This rule is enforced in code, not just by convention: `src/lib/preview-guard.ts` detects a _preview_ deployment configured with the _production_ database, makes the database-touching server endpoints refuse with a clear message, and shows a warning banner in the app. (Branches cut from `mvp` don't contain this guard, so existing mvp-based previews are unaffected.) Once the global Preview variables point at the dev project the condition can never be true, and the guard and its call sites should be deleted.
+
 **Hard deadline for the flip:** before the first Phase 1 migration (WP1.2) merges to `dev`. From that point, feature-branch code expects schema the production database doesn't have, so previews falling through to prod values would be broken at best. When mvp-based feature work has wound down, flip the global Preview variables to the dev project and delete the transitional branch scopes.
 
 Local `.env` files point at the dev project (developers still finishing mvp-based work may keep prod values until they switch to `dev`-based work).

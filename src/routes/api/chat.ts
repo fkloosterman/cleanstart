@@ -1,4 +1,5 @@
 import { createModelForPurpose } from "@/lib/ai-gateway.server";
+import { previewGuardMessage } from "@/lib/preview-guard";
 import { buildSystemPrompt, type Persona } from "@/lib/prompts/chat";
 import { createClient } from "@supabase/supabase-js";
 import { createFileRoute } from "@tanstack/react-router";
@@ -22,6 +23,11 @@ export const Route = createFileRoute("/api/chat")({
   server: {
     handlers: {
       POST: async ({ request }) => {
+        const guardMessage = previewGuardMessage(process.env);
+        if (guardMessage) {
+          return new Response(guardMessage, { status: 503 });
+        }
+
         const auth = request.headers.get("authorization");
         if (!auth?.startsWith("Bearer ")) {
           return new Response("Unauthorized", { status: 401 });
