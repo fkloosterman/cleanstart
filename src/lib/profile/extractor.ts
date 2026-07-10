@@ -1,0 +1,184 @@
+/**
+ * Profile extractor (WP1.4, design §4.4, §6.5).
+ *
+ * After a chat turn, a cheap model call receives the current profile and
+ * the last exchange and returns patch operations — not a full profile.
+ * This module owns the prompt (derived from SLOT_REGISTRY, so new slots
+ * are learned automatically), tolerant response parsing, and a strict
+ * failure policy:
+ *
+ *   Extraction failure logs and skips — it never blocks or delays the
+ *   chat reply, and a malformed model response can never corrupt a
+ *   profile. Every returned patch still flows through `applyPatches`
+ *   (WP1.1), which enforces edited-wins and schema validation; this
+ *   module additionally refuses to emit `edited`/`propagated`
+ *   provenance, which only the user and the propagation flow may set.
+ *
+ * The model call is injectable (`GenerateFn`) so the orchestration is
+ * unit-testable without a network, and the eval harness can drive the
+ * real model through the same entry point.
+ */
+
+import { slotFilled } from "@/lib/profile/normalize";
+import type { ProfilePatch } from "@/lib/profile/patches";
+import {
+  PREFERENCE_ENTITY_NAMESPACES,
+  SLOT_NAMES,
+  SLOT_REGISTRY,
+  type SessionProfile,
+  type SlotName,
+} from "@/lib/profile/registry";
+
+/** The last conversational turn the extractor reads. */
+export interface Exchange {
+  /** The user's message (required — extraction is keyed to what they said). */
+  user: string;
+  /** The assistant's reply, when available — gives the user's words context. */
+  assistant?: string;
+}
+
+/** Injected model call; returns the model's raw text. */
+export type GenerateFn = (args: { system: string; prompt: string }) => Promise<string>;
+
+// ---------------------------------------------------------------------------
+// Prompt construction (pure)
+
+function slotLine(name: SlotName): string {
+  const def = SLOT_REGISTRY[name];
+  const shape = def.kind === "list" ? "list (append entries)" : "single value";
+  // z.enum exposes its options; surface them so a weak model stays in-vocabulary.
+  const options = (def.schema as { options?: readonly string[] }).options;
+  const optionsText = options ? ` — one of: ${options.join(", ")}` : "";
+  return `- ${name} (${shape}${def.durable ? ", durable" : ""}): ${def.extractor_hint}${optionsText}`;
+}
+
+/** The extractor system prompt, derived from the registry (§4.2). */
+export function buildExtractionSystem(): string {
+  const slotDocs = SLOT_NAMES.map(slotLine).join("\n");
+  return `You maintain a structured profile of a household exploring clean-energy options. Read the latest exchange and output ONLY the profile changes it justifies, as JSON patch operations.
+
+SLOTS you may write:
+${slotDocs}
+
+PATCH OPERATIONS — output a JSON array (possibly empty). Each item:
+- { "op": "set", "slot": <name>, "value": <value>, "provenance": "stated" | "inferred" }
+    Sets a single-value slot, or replaces a whole list. For motivation_weights,
+    value is an object with numeric cost/carbon/comfort/resilience/learning (relative, 0-1).
+- { "op": "append", "slot": <name>, "value": <entry>, "provenance": "stated" | "inferred" }
+    Adds one entry to a list slot. goals/constraints entries are { "text": string }.
+    topics_discussed entries are a plain string tag.
+    preferences entries are { "entity": "<namespace>:<slug>", "stance": "curious" | "interested" | "priority" | "ruled_out", "provenance": "stated" | "inferred", "note"?: string }.
+    preference namespaces: ${PREFERENCE_ENTITY_NAMESPACES.join(", ")} (e.g. tech:solar, approach:diy, financing:loan).
+- { "op": "clear", "slot": <name>, "provenance": "stated" }  — only when the user retracts something.
+
+RULES:
+- Output ONLY the JSON array. No prose, no markdown, no code fences.
+- Emit a patch ONLY for information NEW or CHANGED in this exchange. If nothing was learned, output [].
+- "stated" = the user said it directly; "inferred" = you reasonably deduced it. Never emit "edited" or "propagated".
+- NEVER infer a "ruled_out" stance from silence — only when the user actually declines or rejects something.
+- NEVER change a slot marked (locked) in the current profile.
+- Keep location no finer than city/state/zip; never capture a street address.
+- Do not restate values already present and unchanged in the current profile.`;
+}
+
+/** Compact view of what's already known, so the model doesn't re-emit it. */
+export function summarizeProfile(profile: SessionProfile): string {
+  const lines: string[] = [];
+  for (const name of SLOT_NAMES) {
+    const slot = profile[name];
+    if (!slotFilled(slot)) continue;
+    const locked = slot.provenance === "edited" ? " (locked)" : "";
+    lines.push(`- ${name}${locked}: ${JSON.stringify(slot.value)}`);
+  }
+  return lines.length > 0 ? lines.join("\n") : "(empty)";
+}
+
+/** The user-turn prompt: current profile + the exchange to extract from. */
+export function buildExtractionPrompt(profile: SessionProfile, exchange: Exchange): string {
+  const parts = [`CURRENT PROFILE:\n${summarizeProfile(profile)}`, "", "LATEST EXCHANGE:"];
+  if (exchange.assistant) parts.push(`Assistant: ${exchange.assistant}`);
+  parts.push(`User: ${exchange.user}`, "", "Patches (JSON array only):");
+  return parts.join("\n");
+}
+
+// ---------------------------------------------------------------------------
+// Response parsing (pure, tolerant)
+
+/**
+ * Extract the JSON patch array from a model response, tolerating code
+ * fences and surrounding prose. Returns [] when no array can be found or
+ * parsed — a parse failure must never throw into the chat path.
+ */
+export function parsePatchArray(text: string): unknown[] {
+  if (typeof text !== "string") return [];
+  let body = text.trim();
+
+  // Strip a leading ```json / ``` fence and its closing fence, if present.
+  const fence = body.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
+  if (fence) body = fence[1].trim();
+
+  // Fall back to the outermost bracketed span if there's leading/trailing prose.
+  if (!body.startsWith("[")) {
+    const start = body.indexOf("[");
+    const end = body.lastIndexOf("]");
+    if (start === -1 || end <= start) return [];
+    body = body.slice(start, end + 1);
+  }
+
+  try {
+    const parsed = JSON.parse(body);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+const EMITTABLE_PROVENANCE = new Set(["stated", "inferred"]);
+
+/**
+ * Keep only patches the extractor is allowed to emit: a known op, and a
+ * provenance restricted to stated/inferred (edited/propagated are the
+ * user's and the propagation flow's to set). Shape and value validation
+ * happen downstream in `applyPatches`; this is the provenance gate.
+ */
+export function sanitizeExtractedPatches(raw: unknown[]): ProfilePatch[] {
+  const patches: ProfilePatch[] = [];
+  for (const item of raw) {
+    if (typeof item !== "object" || item === null) continue;
+    const p = item as Record<string, unknown>;
+    if (p.op !== "set" && p.op !== "append" && p.op !== "clear") continue;
+    // `clear` carries no user-authored value; allow it through as inferred-safe.
+    const provenance = p.op === "clear" ? "inferred" : p.provenance;
+    if (typeof provenance !== "string" || !EMITTABLE_PROVENANCE.has(provenance)) continue;
+    patches.push({ ...(p as object), provenance } as ProfilePatch);
+  }
+  return patches;
+}
+
+// ---------------------------------------------------------------------------
+// Orchestration
+
+/**
+ * Run extraction for one exchange. Never throws and never blocks: any
+ * failure (model error, unparseable output) logs and yields an empty
+ * patch list, so the caller's chat reply is unaffected. The returned
+ * patches are provenance-sanitized but still pass through `applyPatches`
+ * at the call site for schema validation and the edited-wins rule.
+ */
+export async function extractProfilePatches(
+  profile: SessionProfile,
+  exchange: Exchange,
+  generate: GenerateFn,
+): Promise<ProfilePatch[]> {
+  if (!exchange.user?.trim()) return [];
+  try {
+    const text = await generate({
+      system: buildExtractionSystem(),
+      prompt: buildExtractionPrompt(profile, exchange),
+    });
+    return sanitizeExtractedPatches(parsePatchArray(text));
+  } catch (err) {
+    console.error("[extractor] extraction failed, skipping:", err);
+    return [];
+  }
+}
