@@ -11,12 +11,19 @@ repo that we don't sync with or merge from/into.
   Vercel builds production from it. It changes **only** by promotion from
   `dev` or by an emergency hotfix — never by regular feature PRs.
 - **`dev`** — the long-lived integration branch. All feature work lands
-  here first. Vercel deploys it as a staging environment (Preview env
-  vars → the dev Supabase project), so `dev` is continuously deployed
-  against the dev database.
+  here first. Vercel deploys it as a staging environment (branch-scoped
+  Preview env vars → the dev Supabase project), so `dev` is continuously
+  deployed against the dev database.
 - **Feature branches** — one per work package, named `wp/<id>-<slug>`
   (e.g. `wp/1.4-profile-extractor`), branched off `dev`, PR into `dev`,
   **squash-merged**, branch deleted.
+
+> **Transitional caveat:** Vercel previews of `wp/*` branches currently
+> fall through to the global Preview env vars, which still point at the
+> **production** database (kept that way while mvp-based work winds
+> down). Don't use those previews for database-touching testing — test
+> locally and on the `dev` staging deployment. Details and the flip
+> deadline: `ARCHITECTURE.md` §3.4.
 
 Both `mvp` and `dev` are protected via GitHub branch rulesets: no direct
 or force pushes, everything lands via PR. `main` is not actively used;
