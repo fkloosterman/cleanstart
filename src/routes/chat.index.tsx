@@ -6,10 +6,17 @@ import { useAuth } from "@/hooks/use-auth";
 import { supabase } from "@/integrations/supabase/client";
 import { createSession } from "@/lib/sessions";
 import { profileFromUpfront, type UpfrontInput } from "@/lib/profile/upfront";
-import { emptyProfile, normalizeProfile } from "@/lib/profile/normalize";
-import type { SessionProfile } from "@/lib/profile/registry";
+import { emptyProfile } from "@/lib/profile/normalize";
 import { PROFILE_PATCH_PART_TYPE, readProfilePatchData } from "@/lib/profile/stream";
-import { migrateGuestSession, guestMessagesFromUI } from "@/lib/guest-migration";
+import {
+  GUEST_CHAT_KEY,
+  GUEST_TENURE_KEY,
+  GUEST_LOCATION_KEY,
+  GUEST_PROFILE_KEY,
+  readGuestProfile,
+  writeGuestProfile,
+  clearGuestState,
+} from "@/lib/guest-storage";
 import { useSessionProfile } from "@/hooks/use-session-profile";
 import { ProfilePanel } from "@/components/ProfileSidebar";
 import { PrivacyBanner } from "@/components/PrivacyBanner";
@@ -48,50 +55,12 @@ export const Route = createFileRoute("/chat/")({
   component: ChatPage,
 });
 
-const STORAGE_KEY = "cleanstart.chat.v1";
-const TENURE_KEY = "cleanstart.tenure.v1";
-const LOCATION_KEY = "cleanstart.location.v1";
-// The guest session profile (§9): same shape as sessions.profile, seeded
-// here from the upfront slots (WP1.3) and extended by extraction (WP1.5).
-const PROFILE_KEY = "cleanstart.profile.v1";
-
 /** The upfront steps as the profile mapper consumes them (§4.8). */
 function toUpfrontInput(tenure: Tenure | null, location: Location | null): UpfrontInput {
   return {
     tenure,
     location: location ? { zip: location.zip, city: location.city, state: location.state } : null,
   };
-}
-
-/** The guest profile from localStorage, normalized on read (empty if none). */
-function readStoredProfile(): SessionProfile {
-  if (typeof window === "undefined") return emptyProfile();
-  try {
-    const raw = window.localStorage.getItem(PROFILE_KEY);
-    return raw ? normalizeProfile(JSON.parse(raw)) : emptyProfile();
-  } catch {
-    return emptyProfile();
-  }
-}
-
-function writeStoredProfile(profile: SessionProfile) {
-  try {
-    window.localStorage.setItem(PROFILE_KEY, JSON.stringify(profile));
-  } catch {
-    // ignore
-  }
-}
-
-/** Drop every guest localStorage key — used on start-over and after migration. */
-function clearGuestState() {
-  try {
-    window.localStorage.removeItem(STORAGE_KEY);
-    window.localStorage.removeItem(PROFILE_KEY);
-    window.localStorage.removeItem(TENURE_KEY);
-    window.localStorage.removeItem(LOCATION_KEY);
-  } catch {
-    // ignore
-  }
 }
 
 type Tenure = "homeowner" | "renter" | "curious";
@@ -224,13 +193,8 @@ function ChatPage() {
   // Reactive guest profile (WP1.6): starts empty and is hydrated from
   // localStorage after mount (below), kept in sync by the upfront stepper
   // and per-turn extraction (onData), and edited by the sidebar. The hook
-  // persists every change to localStorage via writeStoredProfile.
-  const profileStore = useSessionProfile(emptyProfile(), writeStoredProfile);
-
-  // Set while a guest→signup migration (WP1.9) is in flight, so the message
-  // persistence effect below doesn't re-write the guest chat to localStorage
-  // after we've cleared it. Once true it stays true until unmount.
-  const migratingRef = useRef(false);
+  // persists every change to localStorage via writeGuestProfile.
+  const profileStore = useSessionProfile(emptyProfile(), writeGuestProfile);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -238,20 +202,20 @@ function ChatPage() {
       return;
     }
     try {
-      const raw = window.localStorage.getItem(STORAGE_KEY);
+      const raw = window.localStorage.getItem(GUEST_CHAT_KEY);
       const parsed = raw ? (JSON.parse(raw) as UIMessage[]) : [];
       setInitialMessages(Array.isArray(parsed) ? parsed : []);
     } catch {
       setInitialMessages([]);
     }
     try {
-      const t = window.localStorage.getItem(TENURE_KEY) as Tenure | null;
+      const t = window.localStorage.getItem(GUEST_TENURE_KEY) as Tenure | null;
       if (t === "homeowner" || t === "renter" || t === "curious") setTenure(t);
     } catch {
       // ignore
     }
     try {
-      const raw = window.localStorage.getItem(LOCATION_KEY);
+      const raw = window.localStorage.getItem(GUEST_LOCATION_KEY);
       if (raw) {
         const parsed = JSON.parse(raw) as Location | { skipped: true };
         if ("zip" in parsed) setLocation(parsed);
@@ -269,7 +233,7 @@ function ChatPage() {
         // Read the profile fresh at send time so it carries any patches
         // applied since mount (WP1.5); the server patches onto it and
         // streams the delta back (see onData below).
-        body: () => ({ persona: null, tenure, location, profile: readStoredProfile() }),
+        body: () => ({ persona: null, tenure, location, profile: readGuestProfile() }),
       }),
     [tenure, location],
   );
@@ -308,50 +272,22 @@ function ChatPage() {
   // drives the sidebar UI; state and storage stay in sync via the hook.
   useEffect(() => {
     if (typeof window === "undefined") return;
-    profileStore.setProfile(readStoredProfile());
+    profileStore.setProfile(readGuestProfile());
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Persist the guest transcript — but only while logged out. Once signed in,
+  // the guest→signup migration (useGuestMigration, mounted in AppShell) owns
+  // this conversation: it copies it to the DB and clears local state, so this
+  // page must not re-write it back to localStorage after that.
   useEffect(() => {
-    if (typeof window === "undefined" || initialMessages === null || migratingRef.current) return;
+    if (typeof window === "undefined" || initialMessages === null || user) return;
     try {
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(messages));
+      window.localStorage.setItem(GUEST_CHAT_KEY, JSON.stringify(messages));
     } catch {
       // ignore
     }
-  }, [messages, initialMessages]);
-
-  // Guest → signup migration (WP1.9, §9). When a guest with a conversation in
-  // progress signs in, copy that conversation + profile into a persisted DB
-  // session, clear the local guest state (we read from the DB now, not
-  // localStorage), and hand the user off to the session — which renders its
-  // own DB-backed sidebar. Only fires when there's a conversation to keep;
-  // a fresh signed-in visit (no guest messages) is left untouched.
-  useEffect(() => {
-    if (authLoading || !user || migratingRef.current) return;
-    if (initialMessages === null || messages.length === 0) return;
-    migratingRef.current = true;
-    (async () => {
-      try {
-        const result = await migrateGuestSession(
-          user.id,
-          guestMessagesFromUI(messages),
-          profileStore.profile,
-        );
-        // Stop using local state: clear the guest keys synchronously so a
-        // later signed-in visit can't re-migrate (which would duplicate).
-        clearGuestState();
-        if (result) {
-          navigate({ to: "/chat/$sessionId", params: { sessionId: result.sessionId } });
-        }
-      } catch {
-        // Keep the guest data intact and let the user retry with a reload;
-        // don't loop (which would spawn orphan sessions).
-        toast.error("Couldn't move your conversation to your account. Try reloading.");
-      }
-    })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [authLoading, user, initialMessages, messages]);
+  }, [messages, initialMessages, user]);
 
   // Guests: keep the localStorage profile's upfront slots in sync with the
   // stepper. Signed-in users' profile lives in sessions.profile (seeded at
@@ -383,7 +319,7 @@ function ChatPage() {
   const pickTenure = (t: Tenure) => {
     setTenure(t);
     try {
-      window.localStorage.setItem(TENURE_KEY, t);
+      window.localStorage.setItem(GUEST_TENURE_KEY, t);
     } catch {
       // ignore
     }
@@ -394,9 +330,9 @@ function ChatPage() {
     setZipStepDone(false);
     setLocation(null);
     try {
-      window.localStorage.removeItem(TENURE_KEY);
-      window.localStorage.removeItem(LOCATION_KEY);
-      window.localStorage.removeItem(PROFILE_KEY);
+      window.localStorage.removeItem(GUEST_TENURE_KEY);
+      window.localStorage.removeItem(GUEST_LOCATION_KEY);
+      window.localStorage.removeItem(GUEST_PROFILE_KEY);
     } catch {
       // ignore
     }
@@ -406,7 +342,7 @@ function ChatPage() {
     setZipStepDone(false);
     setLocation(null);
     try {
-      window.localStorage.removeItem(LOCATION_KEY);
+      window.localStorage.removeItem(GUEST_LOCATION_KEY);
     } catch {
       // ignore
     }
@@ -430,13 +366,13 @@ function ChatPage() {
     if (loc) {
       setLocation(loc);
       try {
-        window.localStorage.setItem(LOCATION_KEY, JSON.stringify(loc));
+        window.localStorage.setItem(GUEST_LOCATION_KEY, JSON.stringify(loc));
       } catch {
         // ignore
       }
     } else {
       try {
-        window.localStorage.setItem(LOCATION_KEY, JSON.stringify({ skipped: true }));
+        window.localStorage.setItem(GUEST_LOCATION_KEY, JSON.stringify({ skipped: true }));
       } catch {
         // ignore
       }

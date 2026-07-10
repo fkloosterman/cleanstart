@@ -3,6 +3,7 @@ import { Link } from "@tanstack/react-router";
 import { Leaf, Menu, TriangleAlert, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/use-auth";
+import { useGuestMigration } from "@/hooks/use-guest-migration";
 import { AuthModal } from "@/components/AuthModal";
 import { previewGuardMessage } from "@/lib/preview-guard";
 
@@ -26,6 +27,10 @@ export function AppShell({ children }: { children: ReactNode }) {
   const { user, signOut, loading } = useAuth();
   const [authOpen, setAuthOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  // Migrate a guest's conversation + profile into their account on sign-in,
+  // from whatever route auth lands on (WP1.9, incl. the OAuth/email-confirm
+  // redirects). Mounted here because AppShell wraps every route.
+  useGuestMigration();
   const nav = NAV.filter((n) => n.to !== "/history" || user);
 
   return (
