@@ -436,7 +436,10 @@ function FieldRow({
             <button
               type="button"
               aria-label={`Edit ${field.label}`}
-              className="mt-0.5 shrink-0 rounded-md p-1 text-muted-foreground/60 opacity-0 transition hover:bg-accent hover:text-foreground focus:opacity-100 group-hover:opacity-100 data-[state=open]:opacity-100"
+              // Always visible (not hover-gated) so the affordance is
+              // discoverable and reachable on touch devices; it darkens on
+              // hover / when its popover is open.
+              className="mt-0.5 shrink-0 rounded-md p-1 text-muted-foreground/50 transition hover:bg-accent hover:text-foreground data-[state=open]:bg-accent data-[state=open]:text-foreground"
             >
               {field.filled ? <Pencil className="h-3.5 w-3.5" /> : <Plus className="h-4 w-4" />}
             </button>
