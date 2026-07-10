@@ -1,7 +1,17 @@
 import { createModelForPurpose } from "@/lib/ai-gateway.server";
 import { buildSystemPrompt, type Persona } from "@/lib/prompts/chat";
+import { extractProfilePatches } from "@/lib/profile/extractor";
+import { createExtractionGenerate } from "@/lib/profile/extractor.server";
+import { normalizeProfile } from "@/lib/profile/normalize";
+import { PROFILE_PATCH_PART_TYPE } from "@/lib/profile/stream";
 import { createFileRoute } from "@tanstack/react-router";
-import { convertToModelMessages, streamText, type UIMessage } from "ai";
+import {
+  convertToModelMessages,
+  createUIMessageStream,
+  createUIMessageStreamResponse,
+  streamText,
+  type UIMessage,
+} from "ai";
 
 type Tenure = "homeowner" | "renter" | "curious" | null;
 type Location = { zip: string; city: string; state: string; utility: string } | null;
@@ -10,7 +20,16 @@ type Body = {
   tenure?: Tenure;
   location?: Location;
   messages?: UIMessage[];
+  /** The guest's current localStorage profile (§9); patched per turn (WP1.5). */
+  profile?: unknown;
 };
+
+function textOf(msg: UIMessage) {
+  return msg.parts
+    .map((p) => (p.type === "text" ? p.text : ""))
+    .join("")
+    .trim();
+}
 
 const TENURE_LABEL: Record<NonNullable<Tenure>, string> = {
   homeowner: "homeowner",
@@ -114,20 +133,53 @@ export const Route = createFileRoute("/api/public/chat-guest")({
         const system = `${buildContextSystem(tenureValue, city, state, utility)}\n\n${baseSystem}`;
 
         const model = createModelForPurpose("chat", OPENROUTER_API_KEY);
+        const modelMessages = await convertToModelMessages(trimmed);
 
-        const result = streamText({
-          model,
-          system,
-          messages: await convertToModelMessages(trimmed),
-        });
+        // Extraction inputs: the profile the client sent (normalized on read,
+        // so an old/junk shape heals) and this turn's user message. The client
+        // owns persistence — the server just returns patches on the stream.
+        const currentProfile = normalizeProfile(body.profile);
+        const lastUser = [...trimmed].reverse().find((m) => m.role === "user");
+        const lastUserText = lastUser ? textOf(lastUser) : "";
+        const extract = createExtractionGenerate(OPENROUTER_API_KEY);
 
-        return result.toUIMessageStreamResponse({
+        const stream = createUIMessageStream({
           originalMessages: trimmed,
+          execute: async ({ writer }) => {
+            const result = streamText({ model, system, messages: modelMessages });
+            // Forward the reply as it streams — zero added time-to-first-token.
+            writer.merge(result.toUIMessageStream());
+
+            // Extraction runs only after the reply has fully streamed (WP1.4).
+            // Never throws and never blocks the reply the user already saw.
+            if (!lastUserText) return;
+            // A stream failure is already surfaced via the merge; bail rather
+            // than extract from a broken turn.
+            let assistantText = "";
+            try {
+              assistantText = (await result.text).trim();
+            } catch (err) {
+              console.error("[/api/public/chat-guest] reply stream failed:", err);
+              return;
+            }
+            const patches = await extractProfilePatches(
+              currentProfile,
+              { user: lastUserText, assistant: assistantText || undefined },
+              extract,
+            );
+            if (patches.length === 0) return;
+            // Return patches on the same stream; the client applies them onto
+            // its localStorage profile via `applyPatches` (§9). Transient: a
+            // side-channel, never part of the persisted message history.
+            writer.write({ type: PROFILE_PATCH_PART_TYPE, data: { patches }, transient: true });
+          },
           onError: (error) => {
             console.error("[/api/public/chat-guest] stream error", error);
             return error instanceof Error ? error.message : "Stream error";
           },
         });
+
+        return createUIMessageStreamResponse({ stream });
       },
     },
   },

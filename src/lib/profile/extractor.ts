@@ -14,6 +14,14 @@
  *   module additionally refuses to emit `edited`/`propagated`
  *   provenance, which only the user and the propagation flow may set.
  *
+ * Parsing is tolerant per-object (see `parsePatchArray`): one corrupt
+ * element from a weak model no longer discards a whole turn's patches.
+ * There is deliberately **no retry** — extraction runs every turn against
+ * the current profile, so a fully-skipped turn self-heals on the next
+ * message; a retry would only add latency to the on-stream extraction
+ * (contrast the composer, WP3.6, whose one-shot report generation does
+ * warrant retry→fallback).
+ *
  * The model call is injectable (`GenerateFn`) so the orchestration is
  * unit-testable without a network, and the eval harness can drive the
  * real model through the same entry point.
@@ -105,9 +113,54 @@ export function buildExtractionPrompt(profile: SessionProfile, exchange: Exchang
 // Response parsing (pure, tolerant)
 
 /**
+ * Split a JSON-array body into its top-level `{…}` object spans by brace
+ * depth, so each can be parsed on its own. Nested value objects (e.g. a
+ * goal's `{ "text": … }`) stay inside their parent span.
+ *
+ * Deliberately *not* string-aware: this runs only after the array as a
+ * whole has already failed to parse, and the corruption we're salvaging
+ * around (a stray glitch token) frequently unbalances a quote, which would
+ * desync string tracking and lose every sibling after it. A plain brace
+ * scan is immune to that. The one thing it can misjudge — a literal
+ * `{`/`}` inside a string value — costs at most one already-suspect object
+ * its salvage, and never affects clean input (which took the fast path).
+ */
+function objectSpans(text: string): string[] {
+  const spans: string[] = [];
+  let depth = 0;
+  let start = -1;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (ch === "{") {
+      if (depth === 0) start = i;
+      depth++;
+    } else if (ch === "}" && depth > 0) {
+      depth--;
+      if (depth === 0 && start !== -1) {
+        spans.push(text.slice(start, i + 1));
+        start = -1;
+      }
+    }
+  }
+  return spans;
+}
+
+/**
  * Extract the JSON patch array from a model response, tolerating code
  * fences and surrounding prose. Returns [] when no array can be found or
  * parsed — a parse failure must never throw into the chat path.
+ *
+ * When the array as a whole won't parse, fall back to parsing each
+ * top-level object independently and keep the ones that survive. A weak or
+ * quantized model routinely injects a stray glitch token (a rogue Unicode
+ * char, a mangled key) that invalidates the *whole* document under a single
+ * `JSON.parse`; per-object salvage shrinks that blast radius to the one bad
+ * object, so a single glitch no longer discards the whole turn's patches.
+ * Every survivor still passes through `sanitizeExtractedPatches` and
+ * `applyPatches`, which validate it — salvage only recovers syntax, it
+ * grants no trust. (Prevention — constraining the model to valid JSON — is
+ * the complementary layer, tracked in the plan; this is the containment
+ * layer, and it is unconditional.)
  */
 export function parsePatchArray(text: string): unknown[] {
   if (typeof text !== "string") return [];
@@ -125,12 +178,26 @@ export function parsePatchArray(text: string): unknown[] {
     body = body.slice(start, end + 1);
   }
 
+  // Fast path: a well-formed array parses whole.
   try {
     const parsed = JSON.parse(body);
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
+    if (Array.isArray(parsed)) return parsed;
     return [];
+  } catch {
+    // Fall through to per-object salvage.
   }
+
+  // Salvage path: parse each element object on its own; a corrupt sibling
+  // drops only itself.
+  const salvaged: unknown[] = [];
+  for (const span of objectSpans(body)) {
+    try {
+      salvaged.push(JSON.parse(span));
+    } catch {
+      // Corrupt object — skip it, keep the rest.
+    }
+  }
+  return salvaged;
 }
 
 const EMITTABLE_PROVENANCE = new Set(["stated", "inferred"]);

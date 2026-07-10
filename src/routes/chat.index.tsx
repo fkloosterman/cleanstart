@@ -6,6 +6,10 @@ import { useAuth } from "@/hooks/use-auth";
 import { supabase } from "@/integrations/supabase/client";
 import { createSession } from "@/lib/sessions";
 import { profileFromUpfront, type UpfrontInput } from "@/lib/profile/upfront";
+import { emptyProfile, normalizeProfile } from "@/lib/profile/normalize";
+import { applyPatches } from "@/lib/profile/patches";
+import type { SessionProfile } from "@/lib/profile/registry";
+import { PROFILE_PATCH_PART_TYPE, readProfilePatchData } from "@/lib/profile/stream";
 import { PrivacyBanner } from "@/components/PrivacyBanner";
 import {
   Conversation,
@@ -55,6 +59,25 @@ function toUpfrontInput(tenure: Tenure | null, location: Location | null): Upfro
     tenure,
     location: location ? { zip: location.zip, city: location.city, state: location.state } : null,
   };
+}
+
+/** The guest profile from localStorage, normalized on read (empty if none). */
+function readStoredProfile(): SessionProfile {
+  if (typeof window === "undefined") return emptyProfile();
+  try {
+    const raw = window.localStorage.getItem(PROFILE_KEY);
+    return raw ? normalizeProfile(JSON.parse(raw)) : emptyProfile();
+  } catch {
+    return emptyProfile();
+  }
+}
+
+function writeStoredProfile(profile: SessionProfile) {
+  try {
+    window.localStorage.setItem(PROFILE_KEY, JSON.stringify(profile));
+  } catch {
+    // ignore
+  }
 }
 
 type Tenure = "homeowner" | "renter" | "curious";
@@ -218,7 +241,10 @@ function ChatPage() {
     () =>
       new DefaultChatTransport({
         api: "/api/public/chat-guest",
-        body: () => ({ persona: null, tenure, location }),
+        // Read the profile fresh at send time so it carries any patches
+        // applied since mount (WP1.5); the server patches onto it and
+        // streams the delta back (see onData below).
+        body: () => ({ persona: null, tenure, location, profile: readStoredProfile() }),
       }),
     [tenure, location],
   );
@@ -239,6 +265,17 @@ function ChatPage() {
     onError(err) {
       toast.error(err.message || "Something went wrong");
     },
+    // The server streams a transient `data-profile-patch` after each reply
+    // (WP1.5); apply it onto the stored profile so it accumulates across the
+    // conversation. `applyPatches` validates and enforces edited-wins, so a
+    // malformed payload can never corrupt the profile.
+    onData(part) {
+      if (part.type !== PROFILE_PATCH_PART_TYPE) return;
+      const patches = readProfilePatchData(part.data);
+      if (patches.length === 0) return;
+      const { profile } = applyPatches(readStoredProfile(), patches);
+      writeStoredProfile(profile);
+    },
   });
 
   useEffect(() => {
@@ -252,8 +289,9 @@ function ChatPage() {
 
   // Guests: keep the localStorage profile's upfront slots in sync with the
   // stepper. Signed-in users' profile lives in sessions.profile (seeded at
-  // session creation in handleSend). WP1.5 extends this to merge extraction
-  // patches onto the stored profile rather than reseeding from upfront only.
+  // session creation in handleSend). The upfront patches are applied *onto*
+  // the stored profile — not a fresh one — so per-turn extraction patches
+  // (WP1.5, applied in onData) accumulate rather than being reset each render.
   useEffect(() => {
     if (typeof window === "undefined" || initialMessages === null || user) return;
     try {
@@ -261,8 +299,8 @@ function ChatPage() {
         window.localStorage.removeItem(PROFILE_KEY);
         return;
       }
-      const profile = profileFromUpfront(toUpfrontInput(tenure, location));
-      window.localStorage.setItem(PROFILE_KEY, JSON.stringify(profile));
+      const profile = profileFromUpfront(toUpfrontInput(tenure, location), readStoredProfile());
+      writeStoredProfile(profile);
     } catch {
       // ignore
     }

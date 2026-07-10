@@ -221,6 +221,16 @@ malformed model response provably cannot corrupt a profile.
   localStorage (§9).
 - Decide-in-code (documented): extraction runs after the reply
   streams, not before (latency), as data parts on the same stream.
+- Parser robustness (landed here): `parsePatchArray` salvages patches
+  **per-object** — when the array as a whole won't parse, each element
+  object is parsed independently and the survivors kept, so one glitch
+  token from a weak/quantized model no longer discards a whole turn's
+  patches. This is the _containment_ layer; the complementary
+  _prevention_ layer (constraining the model to emit valid JSON) is
+  D12's follow-up, below. Extraction deliberately does **not** retry —
+  it re-runs every turn against the current profile, so a skipped turn
+  self-heals on the next message (unlike the composer's one-shot
+  generation, WP3.6, which does retry→fallback).
   **Done when:** a conversation observably accumulates a profile in both
   modes, with zero added time-to-first-token.
 
@@ -711,7 +721,26 @@ remain open and are decided when their tier is scheduled.
   model drifting on prod. **D12b (budget):** deferred until the
   bake-off picks; posture will be alert-only (~$25/mo) — at
   $0.0001–0.0015 per extraction call, spend is single-digit dollars
-  monthly until real traffic says otherwise.
+  monthly until real traffic says otherwise. **D12c (output
+  constraints — open, decided at the bake-off):** structured calls
+  (extraction, composition) should additionally be _constrained_ to
+  valid JSON at the request layer, not just asked for it in the prompt.
+  The insertion point is the gateway — `applyRoutingPreferences`
+  (`src/lib/model-map.ts`) already rewrites the outgoing body per
+  purpose, so a `response_format: { type: "json_schema", … }` (or the
+  provider's JSON mode) is added there, config-driven, without touching
+  the extractor's text-in/parse-here `GenerateFn` seam. This is the
+  _prevention_ layer that complements WP1.5's per-object parse salvage
+  (_containment_): prevention lowers how often malformed output happens,
+  salvage bounds the damage when it does — neither removes the need for
+  the other, since a constrained request is only as reliable as the
+  provider that honors it. The bake-off (WP0.5) is where this is
+  settled: measure each candidate's malformed-output rate with and
+  without the constraint, and note that complex discriminated-union
+  schemas (the patch-op array) are honored unevenly across providers —
+  which is itself a reason salvage stays the unconditional floor.
+  Dev keeps free models with ZDR off; the constraint, like ZDR, is a
+  production-enforced setting.
 - **D13 — Second Supabase project.** ✅ **Resolved: yes, create it.**
   Google sign-in needs no new Google Cloud project: add the dev
   project's callback URL as an authorized redirect URI on the
