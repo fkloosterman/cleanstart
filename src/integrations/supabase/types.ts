@@ -45,6 +45,7 @@ export type Database = {
           content: string;
           created_at: string;
           id: string;
+          parts: Json | null;
           role: string;
           session_id: string;
         };
@@ -52,6 +53,7 @@ export type Database = {
           content: string;
           created_at?: string;
           id?: string;
+          parts?: Json | null;
           role: string;
           session_id: string;
         };
@@ -59,6 +61,7 @@ export type Database = {
           content?: string;
           created_at?: string;
           id?: string;
+          parts?: Json | null;
           role?: string;
           session_id?: string;
         };
@@ -75,16 +78,19 @@ export type Database = {
       profiles: {
         Row: {
           created_at: string;
+          durable_profile: Json | null;
           id: string;
           persona: string | null;
         };
         Insert: {
           created_at?: string;
+          durable_profile?: Json | null;
           id: string;
           persona?: string | null;
         };
         Update: {
           created_at?: string;
+          durable_profile?: Json | null;
           id?: string;
           persona?: string | null;
         };
@@ -131,7 +137,7 @@ export type Database = {
           {
             foreignKeyName: "reports_session_id_fkey";
             columns: ["session_id"];
-            isOneToOne: false;
+            isOneToOne: true;
             referencedRelation: "sessions";
             referencedColumns: ["id"];
           },
@@ -149,6 +155,8 @@ export type Database = {
           created_at: string;
           id: string;
           is_complete: boolean;
+          profile: Json | null;
+          readiness_reached_at: string | null;
           title: string;
           updated_at: string;
           user_id: string;
@@ -157,6 +165,8 @@ export type Database = {
           created_at?: string;
           id?: string;
           is_complete?: boolean;
+          profile?: Json | null;
+          readiness_reached_at?: string | null;
           title?: string;
           updated_at?: string;
           user_id: string;
@@ -165,6 +175,8 @@ export type Database = {
           created_at?: string;
           id?: string;
           is_complete?: boolean;
+          profile?: Json | null;
+          readiness_reached_at?: string | null;
           title?: string;
           updated_at?: string;
           user_id?: string;
