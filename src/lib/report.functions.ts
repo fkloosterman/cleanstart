@@ -1,6 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { createModelForPurpose } from "@/lib/ai-gateway.server";
+import { previewGuardMessage } from "@/lib/preview-guard";
 import { buildReportPrompt } from "@/lib/prompts/report";
 import { generateText } from "ai";
 import { z } from "zod";
@@ -64,6 +65,9 @@ export const getReport = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) => SessionInput.parse(d))
   .handler(async ({ data, context }) => {
+    const guardMessage = previewGuardMessage(process.env);
+    if (guardMessage) throw new Error(guardMessage);
+
     const { supabase, userId } = context;
     const { data: report } = await supabase
       .from("reports")
@@ -78,6 +82,9 @@ export const generateReport = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) => SessionInput.parse(d))
   .handler(async ({ data, context }) => {
+    const guardMessage = previewGuardMessage(process.env);
+    if (guardMessage) throw new Error(guardMessage);
+
     const { supabase, userId } = context;
     const { sessionId } = data;
 

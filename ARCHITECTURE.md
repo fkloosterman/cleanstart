@@ -96,7 +96,19 @@ The app needs a handful of credentials to run, split into two kinds:
 - **Public values** (safe to have in a local config file): the Supabase project's public web address and public API key.
 - **Private secrets** (never shared or committed to code): a Supabase key that bypasses normal access rules (used only by server-side code), and the OpenRouter API key.
 
-See `.env.example` in the repo for the full list and where each one goes. In Vercel, these are configured per environment: the **Production** environment's variables point at the production Supabase project, and the **Preview** environment's variables (used by the `dev` staging deployment and PR previews) point at the dev Supabase project. Local `.env` files also point at the dev project.
+See `.env.example` in the repo for the full list and where each one goes. In Vercel, these are configured per environment:
+
+- The **Production** environment's variables point at the production Supabase project.
+- In the **Preview** environment, **branch-scoped** variables for the `dev` branch point at the dev Supabase project — that's what makes the staging deployment safe.
+- **All other preview deployments** (PRs from `wp/*` branches, PRs into `mvp`) fall through to the global Preview values, which — transitionally — still point at the **production** project, so that teammates with in-flight mvp-based work keep their current preview behavior.
+
+**Transitional rule, until the global Preview values are flipped to the dev project:** don't use the Vercel preview of a `wp/*` feature branch to test against a database — it runs against production. Test locally (your `.env` → dev project) and on the `dev` staging deployment after merge. If a specific feature branch genuinely needs a working preview, add branch-scoped Preview variables for that exact branch name in Vercel, pointing at the dev project.
+
+This rule is enforced in code, not just by convention: `src/lib/preview-guard.ts` detects a _preview_ deployment configured with the _production_ database, makes the database-touching server endpoints refuse with a clear message, and shows a warning banner in the app. (Branches cut from `mvp` don't contain this guard, so existing mvp-based previews are unaffected.) Once the global Preview variables point at the dev project the condition can never be true, and the guard and its call sites should be deleted.
+
+**Hard deadline for the flip:** before the first Phase 1 migration (WP1.2) merges to `dev`. From that point, feature-branch code expects schema the production database doesn't have, so previews falling through to prod values would be broken at best. When mvp-based feature work has wound down, flip the global Preview variables to the dev project and delete the transitional branch scopes.
+
+Local `.env` files point at the dev project (developers still finishing mvp-based work may keep prod values until they switch to `dev`-based work).
 
 ## 4. Where things stand / what's next
 

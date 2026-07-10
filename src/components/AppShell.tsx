@@ -1,9 +1,18 @@
 import { useState, type ReactNode } from "react";
 import { Link } from "@tanstack/react-router";
-import { Leaf, Menu, X } from "lucide-react";
+import { Leaf, Menu, TriangleAlert, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/use-auth";
 import { AuthModal } from "@/components/AuthModal";
+import { previewGuardMessage } from "@/lib/preview-guard";
+
+// Vercel inlines VITE_-prefixed system env vars into the client bundle (when
+// "Automatically expose System Environment Variables" is enabled); locally
+// VITE_VERCEL_ENV is undefined and the guard stays silent.
+const PREVIEW_WARNING = previewGuardMessage({
+  VERCEL_ENV: import.meta.env.VITE_VERCEL_ENV as string | undefined,
+  SUPABASE_URL: import.meta.env.VITE_SUPABASE_URL as string | undefined,
+});
 
 const NAV = [
   { to: "/", label: "Home" },
@@ -110,6 +119,13 @@ export function AppShell({ children }: { children: ReactNode }) {
           </div>
         )}
       </header>
+
+      {PREVIEW_WARNING && (
+        <div className="border-b border-amber-300 bg-amber-100 px-4 py-2 text-center text-sm font-medium text-amber-900">
+          <TriangleAlert className="mr-1.5 inline h-4 w-4 align-text-bottom" />
+          {PREVIEW_WARNING}
+        </div>
+      )}
 
       <main className="flex-1">{children}</main>
 
