@@ -2,9 +2,11 @@ name: CI
 
 on:
   pull_request:
-    branches: [dev, mvp]
+    # phase-3 is the Phase 3 integration branch; WP3.x PRs target it, so CI
+    # must gate them too (removed when phase-3 promotes to dev and is deleted).
+    branches: [dev, mvp, phase-3]
   push:
-    branches: [dev, mvp]
+    branches: [dev, mvp, phase-3]
 
 jobs:
   checks:
