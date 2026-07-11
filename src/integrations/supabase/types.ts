@@ -8,6 +8,171 @@ export type Database = {
   };
   public: {
     Tables: {
+      content_components: {
+        Row: {
+          body_md: string;
+          effort: string;
+          expires: string | null;
+          housing_types: string[];
+          impact: Json;
+          kind: string;
+          lanes: string[];
+          last_verified: string;
+          media: string[];
+          prerequisites: string[];
+          regions: string[];
+          slug: string;
+          sources: string[];
+          status: string;
+          summary: string;
+          synced_at: string;
+          technologies: string[];
+          tenures: string[];
+          title: string;
+          version: number;
+        };
+        Insert: {
+          body_md: string;
+          effort: string;
+          expires?: string | null;
+          housing_types?: string[];
+          impact: Json;
+          kind: string;
+          lanes?: string[];
+          last_verified: string;
+          media?: string[];
+          prerequisites?: string[];
+          regions?: string[];
+          slug: string;
+          sources?: string[];
+          status: string;
+          summary: string;
+          synced_at?: string;
+          technologies?: string[];
+          tenures?: string[];
+          title: string;
+          version: number;
+        };
+        Update: {
+          body_md?: string;
+          effort?: string;
+          expires?: string | null;
+          housing_types?: string[];
+          impact?: Json;
+          kind?: string;
+          lanes?: string[];
+          last_verified?: string;
+          media?: string[];
+          prerequisites?: string[];
+          regions?: string[];
+          slug?: string;
+          sources?: string[];
+          status?: string;
+          summary?: string;
+          synced_at?: string;
+          technologies?: string[];
+          tenures?: string[];
+          title?: string;
+          version?: number;
+        };
+        Relationships: [];
+      };
+      content_media: {
+        Row: {
+          alt: string;
+          caption: string;
+          credit: Json;
+          kind: string;
+          regions: string[];
+          slug: string;
+          storage_path: string;
+          synced_at: string;
+          technologies: string[];
+        };
+        Insert: {
+          alt: string;
+          caption?: string;
+          credit: Json;
+          kind: string;
+          regions?: string[];
+          slug: string;
+          storage_path: string;
+          synced_at?: string;
+          technologies?: string[];
+        };
+        Update: {
+          alt?: string;
+          caption?: string;
+          credit?: Json;
+          kind?: string;
+          regions?: string[];
+          slug?: string;
+          storage_path?: string;
+          synced_at?: string;
+          technologies?: string[];
+        };
+        Relationships: [];
+      };
+      content_presets: {
+        Row: {
+          category: string;
+          first_message: string;
+          label: string;
+          profile_patches: Json;
+          regions: string[];
+          slug: string;
+          synced_at: string;
+          tenures: string[];
+        };
+        Insert: {
+          category: string;
+          first_message: string;
+          label: string;
+          profile_patches?: Json;
+          regions?: string[];
+          slug: string;
+          synced_at?: string;
+          tenures?: string[];
+        };
+        Update: {
+          category?: string;
+          first_message?: string;
+          label?: string;
+          profile_patches?: Json;
+          regions?: string[];
+          slug?: string;
+          synced_at?: string;
+          tenures?: string[];
+        };
+        Relationships: [];
+      };
+      content_sources: {
+        Row: {
+          label: string;
+          last_verified: string;
+          publisher: string;
+          slug: string;
+          synced_at: string;
+          url: string;
+        };
+        Insert: {
+          label: string;
+          last_verified: string;
+          publisher: string;
+          slug: string;
+          synced_at?: string;
+          url: string;
+        };
+        Update: {
+          label?: string;
+          last_verified?: string;
+          publisher?: string;
+          slug?: string;
+          synced_at?: string;
+          url?: string;
+        };
+        Relationships: [];
+      };
       feedback: {
         Row: {
           comment: string | null;
@@ -99,6 +264,7 @@ export type Database = {
       reports: {
         Row: {
           created_at: string;
+          document: Json | null;
           id: string;
           key_insights: Json;
           next_steps: Json;
@@ -111,6 +277,7 @@ export type Database = {
         };
         Insert: {
           created_at?: string;
+          document?: Json | null;
           id?: string;
           key_insights?: Json;
           next_steps?: Json;
@@ -123,6 +290,7 @@ export type Database = {
         };
         Update: {
           created_at?: string;
+          document?: Json | null;
           id?: string;
           key_insights?: Json;
           next_steps?: Json;

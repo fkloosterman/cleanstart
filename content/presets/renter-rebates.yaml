@@ -1,0 +1,17 @@
+slug: renter-rebates
+label: Rebates for renters
+category: Rebates
+first_message: What energy rebates are available to renters?
+profile_patches:
+  - op: set
+    slot: motivation_weights
+    provenance: stated
+    value:
+      cost: 1
+      carbon: 0.2
+      comfort: 0.3
+      resilience: 0.2
+      learning: 0.2
+tenures: [renter]
+regions:
+  - US

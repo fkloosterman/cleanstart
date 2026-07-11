@@ -1,0 +1,15 @@
+slug: renter-ev-credits
+label: EV credits for renters
+category: EVs
+first_message: What EV tax credits are available to me?
+profile_patches:
+  - op: append
+    slot: preferences
+    provenance: stated
+    value:
+      entity: tech:ev
+      stance: curious
+      provenance: stated
+tenures: [renter]
+regions:
+  - US
