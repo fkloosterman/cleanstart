@@ -5,10 +5,15 @@
  * Vercel's environment-scoped vars) and can be run manually.
  *
  * Behavior, by situation:
- *   - content invalid            → exit 1 (bad content must not ship)
+ *   - content invalid            → exit 1 (a curator error we control; must not
+ *                                  ship — this is the only hard failure)
  *   - service-role env absent    → skip with a warning, exit 0 (e.g. a preview
- *                                  build with no DB access — don't break builds)
- *   - env present, upsert fails  → exit 1
+ *                                  build with no DB access)
+ *   - env present, upsert fails  → warn, exit 0 (best-effort projection: a DB
+ *                                  that isn't ready — e.g. the migration hasn't
+ *                                  been applied yet — must NOT block the deploy;
+ *                                  the app reads whatever content is already
+ *                                  there, or none, and degrades gracefully)
  *   - success                    → print per-table counts, exit 0
  */
 
@@ -44,8 +49,11 @@ try {
     `✓ content synced — ${counts.components} components, ${counts.media} media, ` +
       `${counts.presets} presets, ${counts.sources} sources`,
   );
-  process.exit(0);
 } catch (err) {
-  console.error(`✗ content sync failed: ${(err as Error).message}`);
-  process.exit(1);
+  // Non-fatal by design: the content is valid, but the DB couldn't be written
+  // (migration not applied yet, transient outage, bad key). Deploy anyway —
+  // the app reads existing content and degrades gracefully — and surface it
+  // loudly so a persistently-failing sync is visible in build logs.
+  console.warn(`⚠ content sync skipped — DB not updated: ${(err as Error).message}`);
 }
+process.exit(0);
