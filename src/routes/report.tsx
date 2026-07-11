@@ -325,73 +325,321 @@ function ReportView({
     try {
       const { jsPDF } = await import("jspdf");
       const doc = new jsPDF({ unit: "pt", format: "letter" });
-      const margin = 48;
       const pageWidth = doc.internal.pageSize.getWidth();
       const pageHeight = doc.internal.pageSize.getHeight();
-      const maxWidth = pageWidth - margin * 2;
-      let y = margin;
+      const margin = 52;
+      const contentWidth = pageWidth - margin * 2;
+      let y = 0;
+
+      // ── Color palette ──────────────────────────────────────────────────────
+      const BRAND_GREEN: [number, number, number] = [22, 101, 52];   // deep green
+      const ACCENT_GREEN: [number, number, number] = [34, 197, 94];  // bright green
+      const SECTION_BLUE: [number, number, number] = [30, 64, 175];  // indigo-blue
+      const CARD_BG: [number, number, number] = [240, 253, 244];     // very light green
+      const DIVIDER: [number, number, number] = [209, 250, 229];     // light green divider
+      const BODY_TEXT: [number, number, number] = [30, 41, 59];      // slate-800
+      const MUTED_TEXT: [number, number, number] = [100, 116, 139];  // slate-500
+      const WHITE: [number, number, number] = [255, 255, 255];
+
+      // ── Helpers ────────────────────────────────────────────────────────────
+      const setColor = (rgb: [number, number, number]) =>
+        doc.setTextColor(rgb[0], rgb[1], rgb[2]);
+      const setFill = (rgb: [number, number, number]) =>
+        doc.setFillColor(rgb[0], rgb[1], rgb[2]);
+      const setDraw = (rgb: [number, number, number]) =>
+        doc.setDrawColor(rgb[0], rgb[1], rgb[2]);
 
       const ensureSpace = (h: number) => {
         if (y + h > pageHeight - margin) {
           doc.addPage();
+          // Repeat a slim top bar on continuation pages
+          setFill(BRAND_GREEN);
+          doc.rect(0, 0, pageWidth, 6, "F");
           y = margin;
         }
       };
-      const writeLines = (text: string, size: number, bold = false) => {
-        doc.setFont("helvetica", bold ? "bold" : "normal");
+
+      /** Render text that wraps within `contentWidth`. Returns the total height consumed. */
+      const writeText = (
+        text: string,
+        size: number,
+        style: "normal" | "bold" | "italic" = "normal",
+        color: [number, number, number] = BODY_TEXT,
+        xOverride?: number,
+        widthOverride?: number,
+      ): number => {
+        doc.setFont("helvetica", style);
         doc.setFontSize(size);
-        const lines = doc.splitTextToSize(text, maxWidth) as string[];
-        const lineHeight = size * 1.3;
+        setColor(color);
+        const w = widthOverride ?? contentWidth;
+        const x = xOverride ?? margin;
+        const lines = doc.splitTextToSize(text, w) as string[];
+        const lh = size * 1.35;
         for (const line of lines) {
-          ensureSpace(lineHeight);
-          doc.text(line, margin, y);
-          y += lineHeight;
+          ensureSpace(lh);
+          doc.text(line, x, y);
+          y += lh;
         }
-      };
-      const gap = (h = 8) => {
-        y += h;
+        return lines.length * lh;
       };
 
-      writeLines("Clean Start — Your Research Summary", 20, true);
-      gap(6);
+      const gap = (h = 10) => { y += h; };
+
+      /** Draw a full-width horizontal rule */
+      const rule = (color: [number, number, number] = DIVIDER, thickness = 0.5) => {
+        ensureSpace(thickness + 4);
+        setDraw(color);
+        doc.setLineWidth(thickness);
+        doc.line(margin, y, pageWidth - margin, y);
+        y += 4;
+      };
+
+      /** Section heading with left accent bar */
+      const sectionHeading = (title: string) => {
+        ensureSpace(28);
+        // Left accent bar
+        setFill(ACCENT_GREEN);
+        doc.rect(margin, y - 13, 3, 16, "F");
+        // Title text
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(13);
+        setColor(SECTION_BLUE);
+        doc.text(title.toUpperCase(), margin + 10, y);
+        y += 8;
+        rule(DIVIDER, 0.5);
+        gap(4);
+      };
+
+      // ══════════════════════════════════════════════════════════════════════
+      // HEADER BANNER
+      // ══════════════════════════════════════════════════════════════════════
+      setFill(BRAND_GREEN);
+      doc.rect(0, 0, pageWidth, 80, "F");
+
+      // Subtle diagonal stripe for texture
+      setDraw([16, 80, 40]);
+      doc.setLineWidth(12);
+      for (let x = -20; x < pageWidth + 80; x += 40) {
+        doc.line(x, 0, x + 80, 80);
+      }
+
+      // App name / tagline
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(22);
+      setColor(WHITE);
+      doc.text("Clean Start", margin, 38);
+
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(10);
+      setColor([187, 247, 208]);
+      doc.text("Your Personalized Clean Energy Research Summary", margin, 56);
+
+      // Date
+      const dateStr = new Date().toLocaleDateString("en-US", {
+        year: "numeric", month: "long", day: "numeric",
+      });
+      doc.setFontSize(9);
+      setColor([134, 239, 172]);
+      doc.text(dateStr, pageWidth - margin, 56, { align: "right" });
+
+      y = 96;
+
+      // ── Readiness score badge ──────────────────────────────────────────────
       if (report.readiness_score !== null) {
-        writeLines(`Readiness: ${report.readiness_score}/100`, 11);
+        ensureSpace(48);
+        const score = report.readiness_score;
+        // Badge background
+        setFill(CARD_BG);
+        setDraw(DIVIDER);
+        doc.setLineWidth(1);
+        doc.roundedRect(margin, y, contentWidth, 42, 6, 6, "FD");
+        // Score number
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(26);
+        setColor(BRAND_GREEN);
+        doc.text(`${score}`, margin + 16, y + 28);
+        // Divider
+        setDraw([187, 247, 208]);
+        doc.setLineWidth(1);
+        doc.line(margin + 54, y + 8, margin + 54, y + 34);
+        // Label
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(11);
+        setColor(BODY_TEXT);
+        doc.text("Readiness Score", margin + 64, y + 18);
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(9);
+        setColor(MUTED_TEXT);
+        doc.text("out of 100 — based on your answers", margin + 64, y + 31);
+        y += 54;
+      }
+
+      gap(6);
+
+      // ══════════════════════════════════════════════════════════════════════
+      // TOP OPTIONS
+      // ══════════════════════════════════════════════════════════════════════
+      if (topOptions.length) {
+        sectionHeading("Top Options");
+        topOptions.forEach((o, idx) => {
+          ensureSpace(60);
+          // Card background
+          setFill(CARD_BG);
+          setDraw(DIVIDER);
+          doc.setLineWidth(1);
+          // Estimate height (rough) — we'll draw text then close
+          const cardTop = y;
+          // Left colour strip
+          setFill(ACCENT_GREEN);
+          doc.rect(margin, cardTop, 4, 8, "F"); // placeholder, updated after
+
+          y += 14;
+
+          // Option number + title
+          doc.setFont("helvetica", "bold");
+          doc.setFontSize(11);
+          setColor(BRAND_GREEN);
+          doc.text(`${idx + 1}.`, margin + 10, y);
+
+          doc.setFont("helvetica", "bold");
+          doc.setFontSize(12);
+          setColor(BODY_TEXT);
+          const titleLines = doc.splitTextToSize(o.title, contentWidth - 28) as string[];
+          titleLines.forEach((line) => {
+            doc.text(line, margin + 24, y);
+            y += 15;
+          });
+
+          gap(2);
+
+          // Why
+          writeText(o.why, 10, "normal", BODY_TEXT, margin + 12, contentWidth - 20);
+          gap(4);
+
+          // Good fit when
+          if (o.good_fit_when?.length) {
+            writeText("Good fit when:", 9, "bold", MUTED_TEXT, margin + 12, contentWidth - 20);
+            o.good_fit_when.forEach((g) => {
+              // draw a tiny filled square as a tick mark (avoids Unicode encoding issues)
+              setFill([21, 128, 61]);
+              doc.rect(margin + 18, y - 6, 4, 4, "F");
+              writeText(g, 9, "normal", [21, 128, 61], margin + 26, contentWidth - 34);
+            });
+            gap(3);
+          }
+
+          // Tradeoffs
+          if (o.tradeoffs) {
+            writeText(`Tradeoff: ${o.tradeoffs}`, 9, "italic", [161, 98, 7], margin + 12, contentWidth - 20);
+          }
+
+          // Draw the card box retroactively
+          const cardHeight = y - cardTop + 10;
+          setFill(CARD_BG);
+          setDraw(DIVIDER);
+          doc.roundedRect(margin, cardTop, contentWidth, cardHeight, 4, 4, "FD");
+
+          // Re-draw left accent strip on top
+          setFill(ACCENT_GREEN);
+          doc.rect(margin, cardTop, 4, cardHeight, "F");
+
+          // Re-draw text (cards drawn after text — text gets covered; re-render)
+          y = cardTop + 14;
+          doc.setFont("helvetica", "bold");
+          doc.setFontSize(11);
+          setColor(BRAND_GREEN);
+          doc.text(`${idx + 1}.`, margin + 10, y);
+          doc.setFontSize(12);
+          setColor(BODY_TEXT);
+          titleLines.forEach((line) => { doc.text(line, margin + 24, y); y += 15; });
+          gap(2);
+          writeText(o.why, 10, "normal", BODY_TEXT, margin + 12, contentWidth - 20);
+          gap(4);
+          if (o.good_fit_when?.length) {
+            writeText("Good fit when:", 9, "bold", MUTED_TEXT, margin + 12, contentWidth - 20);
+            o.good_fit_when.forEach((g) => {
+              setFill([21, 128, 61]);
+              doc.rect(margin + 18, y - 6, 4, 4, "F");
+              writeText(g, 9, "normal", [21, 128, 61], margin + 26, contentWidth - 34);
+            });
+            gap(3);
+          }
+          if (o.tradeoffs) writeText(`Tradeoff: ${o.tradeoffs}`, 9, "italic", [161, 98, 7], margin + 12, contentWidth - 20);
+
+          y = cardTop + cardHeight + 10;
+          gap(6);
+        });
+      }
+
+      // ══════════════════════════════════════════════════════════════════════
+      // KEY TAKEAWAYS
+      // ══════════════════════════════════════════════════════════════════════
+      if (insights.length) {
+        sectionHeading("Key Takeaways");
+        insights.forEach((k) => {
+          ensureSpace(20);
+          // Bullet dot
+          setFill(ACCENT_GREEN);
+          doc.circle(margin + 5, y - 4, 3, "F");
+          writeText(k, 10, "normal", BODY_TEXT, margin + 16, contentWidth - 16);
+          gap(3);
+        });
+        gap(8);
+      }
+
+      // ══════════════════════════════════════════════════════════════════════
+      // NEXT STEPS
+      // ══════════════════════════════════════════════════════════════════════
+      if (steps.length) {
+        sectionHeading("Suggested Next Steps");
+        steps.forEach((s, i) => {
+          ensureSpace(36);
+          // Step number circle
+          setFill(BRAND_GREEN);
+          doc.circle(margin + 10, y - 5, 9, "F");
+          doc.setFont("helvetica", "bold");
+          doc.setFontSize(9);
+          setColor(WHITE);
+          doc.text(`${i + 1}`, margin + 10, y - 2, { align: "center" });
+
+          // Step title + detail
+          const xOff = margin + 26;
+          const wOff = contentWidth - 26;
+          writeText(s.step, 11, "bold", BODY_TEXT, xOff, wOff);
+          writeText(s.detail, 10, "normal", MUTED_TEXT, xOff, wOff);
+          gap(8);
+        });
         gap(4);
       }
 
-      writeLines("Top options", 14, true);
-      gap(2);
-      topOptions.forEach((o) => {
-        writeLines(o.title, 12, true);
-        writeLines(o.why, 11);
-        if (o.good_fit_when?.length) {
-          writeLines("Good fit when:", 11, true);
-          o.good_fit_when.forEach((g) => writeLines(`• ${g}`, 11));
-        }
-        if (o.tradeoffs) writeLines(`Tradeoff: ${o.tradeoffs}`, 11);
-        gap(6);
-      });
+      // ══════════════════════════════════════════════════════════════════════
+      // RESOURCES
+      // ══════════════════════════════════════════════════════════════════════
+      if (resources.length) {
+        sectionHeading("Resources to Explore");
+        resources.forEach((r) => {
+          ensureSpace(24);
+          // draw a small coloured square as a resource icon (no Unicode needed)
+          setFill(SECTION_BLUE);
+          doc.rect(margin + 4, y - 8, 5, 5, "F");
+          writeText(r.label, 10, "bold", SECTION_BLUE, margin + 14, contentWidth - 18);
+          writeText(r.description, 10, "normal", MUTED_TEXT, margin + 14, contentWidth - 18);
+          gap(6);
+        });
+      }
 
-      writeLines("Key takeaways", 14, true);
-      gap(2);
-      insights.forEach((k) => writeLines(`• ${k}`, 11));
-      gap(6);
-
-      writeLines("Suggested next steps", 14, true);
-      gap(2);
-      steps.forEach((s, i) => {
-        writeLines(`${i + 1}. ${s.step}`, 12, true);
-        writeLines(s.detail, 11);
-        gap(4);
-      });
-
-      writeLines("Resources to explore", 14, true);
-      gap(2);
-      resources.forEach((r) => {
-        writeLines(r.label, 12, true);
-        writeLines(r.description, 11);
-        gap(4);
-      });
+      // ── Footer on every page ───────────────────────────────────────────────
+      const totalPages = (doc.internal as { getNumberOfPages?: () => number }).getNumberOfPages?.() ?? 1;
+      for (let p = 1; p <= totalPages; p++) {
+        doc.setPage(p);
+        setFill([248, 250, 252]);
+        doc.rect(0, pageHeight - 28, pageWidth, 28, "F");
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(8);
+        setColor(MUTED_TEXT);
+        doc.text("Generated by Clean Start • cleanstart.app", margin, pageHeight - 10);
+        doc.text(`Page ${p} of ${totalPages}`, pageWidth - margin, pageHeight - 10, { align: "right" });
+      }
 
       doc.save(`${filenameBase}.pdf`);
     } catch (e) {
