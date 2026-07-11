@@ -89,8 +89,29 @@ const existingSystemsSchema = z.looseObject({
   has_ev: z.boolean().optional(),
 });
 
+/**
+ * The motivation dimensions — the axes of the `motivation_weights` vector
+ * and the anchors the five lanes derive from (§5.1, WP2.1). Declared once
+ * so the slot schema, the lane registry, and the sidebar all agree; adding
+ * a dimension is a "weight dimension + impact backfill" content project
+ * (§11), never a silent edit.
+ */
+export const MOTIVATION_DIMENSIONS = [
+  "cost",
+  "carbon",
+  "comfort",
+  "resilience",
+  "learning",
+] as const;
+export type MotivationDimension = (typeof MOTIVATION_DIMENSIONS)[number];
+
+/** A plain reading of the vector: one non-negative weight per dimension. */
+export type MotivationWeights = Record<MotivationDimension, number>;
+
 // The vector is primary; the lane is derived (§5.1). Weights are
-// relative, non-negative; downstream derivation normalizes.
+// relative, non-negative; downstream derivation normalizes. The shape is
+// spelled out (not built from MOTIVATION_DIMENSIONS) so the inferred type
+// stays precise; a registry test guards the two against drift.
 const motivationWeightsSchema = z.looseObject({
   cost: z.number().min(0),
   carbon: z.number().min(0),
