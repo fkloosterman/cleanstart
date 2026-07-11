@@ -703,7 +703,7 @@ function ChatPage() {
 function StepDots({ active }: { active: 1 | 2 | 3 }) {
   const dots: (1 | 2 | 3)[] = [1, 2, 3];
   return (
-    <div className="mb-6 flex items-center justify-center gap-2">
+    <div className="mb-4 flex items-center justify-center gap-2">
       {dots.map((n) => {
         const isActive = n === active;
         const isDone = n < active;
@@ -877,58 +877,68 @@ function ChipsStep({
 }) {
   const { label, icon: Icon } = TENURE_META[tenure];
   return (
-    <div className="flex h-full flex-col items-center justify-center px-2 py-8 text-center">
-      <StepDots active={3} />
+    // Header/list layout: the step dots, tenure/location pills, and heading are
+    // a pinned header (shrink-0) so the orientation and the "change" controls
+    // stay visible; only the chips scroll (flex-1 min-h-0 overflow-y-auto —
+    // min-h-0 lets the scroll region shrink below its content inside the flex
+    // column). h-full so the whole step fills the parent and never itself
+    // overflows the outer scroller.
+    <div className="flex h-full flex-col px-2 pt-6 text-center">
+      <div className="shrink-0">
+        <StepDots active={3} />
 
-      <div className="mb-5 flex flex-wrap items-center justify-center gap-2">
-        <button
-          type="button"
-          onClick={onChangeTenure}
-          className="inline-flex items-center gap-1.5 rounded-full border border-primary bg-primary-light px-3 py-1 text-xs font-medium text-primary-dark hover:bg-primary-light/70"
-        >
-          <Icon className="h-3.5 w-3.5" />
-          {label}
-          <span className="text-[11px] font-normal text-muted-foreground">· change</span>
-        </button>
-        <button
-          type="button"
-          onClick={onChangeZip}
-          className="inline-flex items-center gap-1.5 rounded-full border border-primary bg-primary-light px-3 py-1 text-xs font-medium text-primary-dark hover:bg-primary-light/70"
-        >
-          <MapPin className="h-3.5 w-3.5" />
-          {location ? `${location.city}, ${location.state}` : "No location"}
-          <span className="text-[11px] font-normal text-muted-foreground">
-            · {location ? "change" : "add"}
-          </span>
-        </button>
-      </div>
-
-      <h2 className="text-2xl font-semibold tracking-tight sm:text-3xl">
-        What are you curious about?
-      </h2>
-      <p className="mt-3 max-w-md text-sm text-muted-foreground">
-        {location
-          ? `Showing what's available in ${location.city}, ${location.state} — no jargon, no pressure.`
-          : "Ask anything — no jargon, no pressure."}
-      </p>
-
-      <div className="mt-8 grid w-full max-w-[480px] grid-cols-1 gap-3 sm:grid-cols-2">
-        {presets.map((p) => (
+        <div className="mb-4 flex flex-wrap items-center justify-center gap-2">
           <button
-            key={p.slug}
             type="button"
-            disabled={disabled}
-            onClick={() => onPick(p)}
-            className="group flex flex-col items-start gap-1.5 rounded-xl border border-border bg-card p-4 text-left transition hover:border-primary hover:shadow-sm disabled:opacity-60"
+            onClick={onChangeTenure}
+            className="inline-flex items-center gap-1.5 rounded-full border border-primary bg-primary-light px-3 py-1 text-xs font-medium text-primary-dark hover:bg-primary-light/70"
           >
-            <span className="text-xs font-semibold uppercase tracking-wide text-primary-dark">
-              {p.category}
-            </span>
-            <span className="text-sm text-muted-foreground transition group-hover:text-foreground">
-              {p.first_message}
+            <Icon className="h-3.5 w-3.5" />
+            {label}
+            <span className="text-[11px] font-normal text-muted-foreground">· change</span>
+          </button>
+          <button
+            type="button"
+            onClick={onChangeZip}
+            className="inline-flex items-center gap-1.5 rounded-full border border-primary bg-primary-light px-3 py-1 text-xs font-medium text-primary-dark hover:bg-primary-light/70"
+          >
+            <MapPin className="h-3.5 w-3.5" />
+            {location ? `${location.city}, ${location.state}` : "No location"}
+            <span className="text-[11px] font-normal text-muted-foreground">
+              · {location ? "change" : "add"}
             </span>
           </button>
-        ))}
+        </div>
+
+        <h2 className="text-2xl font-semibold tracking-tight sm:text-3xl">
+          What are you curious about?
+        </h2>
+        <p className="mx-auto mt-2 max-w-md text-sm text-muted-foreground">
+          {location
+            ? `Showing what's available in ${location.city}, ${location.state} — no jargon, no pressure.`
+            : "Ask anything — no jargon, no pressure."}
+        </p>
+      </div>
+
+      <div className="mt-5 min-h-0 flex-1 overflow-y-auto pb-1">
+        <div className="mx-auto grid w-full max-w-[480px] grid-cols-1 gap-2.5 sm:grid-cols-2">
+          {presets.map((p) => (
+            <button
+              key={p.slug}
+              type="button"
+              disabled={disabled}
+              onClick={() => onPick(p)}
+              className="group flex flex-col items-start gap-1 rounded-xl border border-border bg-card p-3.5 text-left transition hover:border-primary hover:shadow-sm disabled:opacity-60"
+            >
+              <span className="text-xs font-semibold uppercase tracking-wide text-primary-dark">
+                {p.category}
+              </span>
+              <span className="text-sm text-muted-foreground transition group-hover:text-foreground">
+                {p.first_message}
+              </span>
+            </button>
+          ))}
+        </div>
       </div>
     </div>
   );

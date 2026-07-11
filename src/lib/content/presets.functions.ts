@@ -14,6 +14,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import type { Json } from "@/integrations/supabase/types";
+import { filterPresetsByTenure } from "@/lib/content/presets";
 
 /** Tenure targeting maps the stepper's owner/renter; "curious" → null (general only). */
 const PresetInput = z.object({ tenure: z.enum(["owner", "renter"]).nullable() });
@@ -46,22 +47,18 @@ export const getPresets = createServerFn({ method: "POST" })
         .order("slug", { ascending: true });
       if (error || !rows) return [];
 
-      return rows
-        .filter((r) => {
-          const tenures = (r.tenures ?? []) as string[];
-          // Empty tenures = general (shown to everyone, incl. "not sure yet").
-          if (tenures.length === 0) return true;
-          return data.tenure !== null && tenures.includes(data.tenure);
-        })
-        .map((r) => ({
-          slug: r.slug,
-          label: r.label,
-          category: r.category,
-          first_message: r.first_message,
-          profile_patches: Array.isArray(r.profile_patches)
-            ? (r.profile_patches as PresetPatch[])
-            : [],
-        }));
+      return filterPresetsByTenure(
+        rows.map((r) => ({ ...r, tenures: (r.tenures ?? []) as string[] })),
+        data.tenure,
+      ).map((r) => ({
+        slug: r.slug,
+        label: r.label,
+        category: r.category,
+        first_message: r.first_message,
+        profile_patches: Array.isArray(r.profile_patches)
+          ? (r.profile_patches as PresetPatch[])
+          : [],
+      }));
     } catch {
       return [];
     }
