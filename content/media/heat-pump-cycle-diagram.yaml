@@ -1,0 +1,12 @@
+slug: heat-pump-cycle-diagram
+kind: diagram
+storage_path: media/heat-pump-cycle-diagram.svg
+alt: A heat pump moving heat between outdoor air and indoor air, reversing between heating and cooling modes
+caption: A heat pump moves heat rather than burning fuel to make it.
+credit:
+  source: CleanStart original
+  license: CC-BY-4.0
+technologies:
+  - heat-pump
+regions:
+  - US
