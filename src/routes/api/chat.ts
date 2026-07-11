@@ -1,11 +1,13 @@
 import { createModelForPurpose } from "@/lib/ai-gateway.server";
+import { deriveLane } from "@/lib/lanes/derive";
 import { previewGuardMessage } from "@/lib/preview-guard";
-import { buildSystemPrompt, type Persona } from "@/lib/prompts/chat";
+import { buildContext, deriveStage } from "@/lib/prompts/context";
 import { extractProfilePatches } from "@/lib/profile/extractor";
 import { createExtractionGenerate } from "@/lib/profile/extractor.server";
-import { normalizeProfile } from "@/lib/profile/normalize";
+import { normalizeProfile, slotValue } from "@/lib/profile/normalize";
 import { applyPatches } from "@/lib/profile/patches";
 import { readiness } from "@/lib/profile/readiness";
+import { reportGate } from "@/lib/profile/readiness-gate";
 import { PROFILE_PATCH_PART_TYPE } from "@/lib/profile/stream";
 import { createClient } from "@supabase/supabase-js";
 import { createFileRoute } from "@tanstack/react-router";
@@ -20,7 +22,6 @@ import type { Database, Json } from "@/integrations/supabase/types";
 
 type Body = {
   sessionId?: string;
-  persona?: Persona;
   messages?: UIMessage[];
 };
 
@@ -110,12 +111,15 @@ export const Route = createFileRoute("/api/chat")({
         // old or junk-shaped column heals rather than blocks (§11).
         const currentProfile = normalizeProfile(session.profile);
 
-        const assistantTurnCount = messages.filter((m) => m.role === "assistant").length;
-        const system = buildSystemPrompt({
-          persona: body.persona ?? null,
-          assistantTurnCount,
-          // Nudge the agent toward the slots that still gate the report (WP1.7).
-          missing: readiness(currentProfile).missing,
+        // The lane is derived from the motivation vector (WP2.1); stage from
+        // information sufficiency and the ratcheted report gate (WP1.7) — no
+        // more persona enum or assistant-turn counting.
+        const lane = deriveLane(slotValue(currentProfile, "motivation_weights"));
+        const gate = reportGate(currentProfile, session.readiness_reached_at);
+        const system = buildContext({
+          profile: currentProfile,
+          lane,
+          stage: deriveStage(currentProfile, lane.framing, { reportGateOpen: gate.open }),
         });
 
         const model = createModelForPurpose("chat", OPENROUTER_API_KEY);
