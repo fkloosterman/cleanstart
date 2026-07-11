@@ -34,6 +34,10 @@ of a record across the repo and the database; never rename or reuse one
 - **Presets** (`presets/*.yaml`) — a chip: a `first_message` plus
   `profile_patches` that warm-start the profile. The patches are validated
   against the real profile patch pipeline — an invalid patch fails CI.
+  Preset `tenures` are display targeting, and **tenure-exclusive**: a homeowner
+  sees only `tenures: [owner]` presets, a renter only `tenures: [renter]`, and
+  a "not sure yet" visitor only the general set (`tenures: []`). Keep each
+  tenure's set small — the opening screen shows them all, unscrolled.
 - **Sources** (`sources/*.yaml`) — a citation authored once and referenced by
   slug from any number of components. Chat citations render from these records
   (D4), so a source's `url`, `publisher`, and `last_verified` live in one place.
