@@ -1,0 +1,17 @@
+slug: best-payback-upgrades
+label: Best-payback upgrades
+category: Efficiency
+first_message: What efficiency upgrades have the best payback?
+profile_patches:
+  - op: set
+    slot: motivation_weights
+    provenance: stated
+    value:
+      cost: 1
+      carbon: 0.2
+      comfort: 0.3
+      resilience: 0.2
+      learning: 0.2
+tenures: [owner]
+regions:
+  - US

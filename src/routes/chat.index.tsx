@@ -1,4 +1,5 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { useServerFn } from "@tanstack/react-start";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport, type UIMessage } from "ai";
@@ -6,6 +7,8 @@ import { useAuth } from "@/hooks/use-auth";
 import { supabase } from "@/integrations/supabase/client";
 import { createSession } from "@/lib/sessions";
 import { profileFromUpfront, type UpfrontInput } from "@/lib/profile/upfront";
+import { applyPatches } from "@/lib/profile/patches";
+import { getPresets, type StarterPreset } from "@/lib/content/presets.functions";
 import { emptyProfile } from "@/lib/profile/normalize";
 import { PROFILE_PATCH_PART_TYPE, readProfilePatchData } from "@/lib/profile/stream";
 import {
@@ -121,26 +124,12 @@ const STATE_UTILITY: Record<string, string> = {
   KY: "LG&E",
 };
 
-const CHIPS: Record<Tenure, { category: string; prompt: string }[]> = {
-  homeowner: [
-    { category: "Solar", prompt: "Is solar worth it for my home?" },
-    { category: "Heat pumps", prompt: "How does a heat pump compare to my gas furnace?" },
-    { category: "EVs", prompt: "What EV tax credits can I get as a homeowner?" },
-    { category: "Efficiency", prompt: "What efficiency upgrades have the best payback?" },
-  ],
-  renter: [
-    { category: "Community solar", prompt: "How does community solar work for renters?" },
-    { category: "Rebates", prompt: "What energy rebates are available to renters?" },
-    { category: "EVs", prompt: "What EV tax credits are available to me?" },
-    { category: "Efficiency", prompt: "How can I lower my energy bill as a renter?" },
-  ],
-  curious: [
-    { category: "Solar", prompt: "Give me a plain-language overview of solar." },
-    { category: "Heat pumps", prompt: "What is a heat pump and should I care?" },
-    { category: "EVs", prompt: "What EV tax credits are available in 2025?" },
-    { category: "Efficiency", prompt: "What are the easiest ways to cut my energy bill?" },
-  ],
-};
+/** The stepper's tenure maps to the content preset targeting (owner/renter). */
+function presetTenure(tenure: Tenure): "owner" | "renter" | null {
+  if (tenure === "homeowner") return "owner";
+  if (tenure === "renter") return "renter";
+  return null; // "curious" — show only general (untargeted) presets
+}
 
 function ChatPage() {
   const navigate = useNavigate();
@@ -200,6 +189,26 @@ function ChatPage() {
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const [input, setInput] = useState("");
   const [creatingSession, setCreatingSession] = useState(false);
+
+  // Starter presets (WP3.2, §3.6) from the content library, filtered to the
+  // chosen tenure. Replaces the hardcoded CHIPS. Empty until a tenure is
+  // picked, or if the fetch fails — the opening screen keeps its text input.
+  const [presets, setPresets] = useState<StarterPreset[]>([]);
+  const fetchPresets = useServerFn(getPresets);
+  useEffect(() => {
+    if (tenure === null) {
+      setPresets([]);
+      return;
+    }
+    let cancelled = false;
+    fetchPresets({ data: { tenure: presetTenure(tenure) } })
+      .then((p) => !cancelled && setPresets(p))
+      .catch(() => !cancelled && setPresets([]));
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tenure]);
 
   // Reactive guest profile (WP1.6): starts empty and is hydrated from
   // localStorage after mount (below), kept in sync by the upfront stepper
@@ -414,7 +423,7 @@ function ChatPage() {
     setTimeout(() => inputRef.current?.focus(), 0);
   };
 
-  const handleSend = async (text: string) => {
+  const handleSend = async (text: string, presetPatches?: unknown[]) => {
     const trimmed = text.trim();
     if (!trimmed || isBusy || creatingSession) return;
     const effectiveTenure = tenure ?? "curious";
@@ -424,11 +433,14 @@ function ChatPage() {
     if (user) {
       // Signed in: create a real session and hand off the first message to
       // the persisted chat page instead of the ephemeral guest flow. Seed
-      // the session profile with the upfront slots (§4.8) so the two are
-      // populated before the first message is answered.
+      // the session profile with the upfront slots (§4.8) plus any preset
+      // warm-start patches, so both are populated before the first answer.
       setCreatingSession(true);
       try {
-        const initialProfile = profileFromUpfront(toUpfrontInput(effectiveTenure, location));
+        let initialProfile = profileFromUpfront(toUpfrontInput(effectiveTenure, location));
+        if (presetPatches?.length) {
+          initialProfile = applyPatches(initialProfile, presetPatches).profile;
+        }
         const sessionId = await createSession(user.id, initialProfile);
         navigate({
           to: "/chat/$sessionId",
@@ -442,8 +454,24 @@ function ChatPage() {
       return;
     }
 
+    // Guest: persist the preset warm-start onto the localStorage profile
+    // *synchronously* before sending — the transport reads readGuestProfile()
+    // at send time, and React state updates are batched, so we can't rely on
+    // profileStore alone to have flushed. setProfile also updates the sidebar.
+    if (presetPatches?.length) {
+      const patched = applyPatches(readGuestProfile(), presetPatches).profile;
+      writeGuestProfile(patched);
+      profileStore.setProfile(patched);
+    }
+
     sendMessage({ text: trimmed });
     setInput("");
+  };
+
+  // A preset click sends its first message AND warm-starts the profile with
+  // its patches (§3.6), so the first agent turn already has real context.
+  const handlePickPreset = (preset: StarterPreset) => {
+    handleSend(preset.first_message, preset.profile_patches);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -624,7 +652,8 @@ function ChatPage() {
                 <ChipsStep
                   tenure={tenure!}
                   location={location}
-                  onPick={handleSend}
+                  presets={presets}
+                  onPick={handlePickPreset}
                   onChangeTenure={resetTenure}
                   onChangeZip={resetZip}
                   disabled={isBusy}
@@ -832,6 +861,7 @@ function ZipStep({ onDone }: { onDone: (loc: Location | null) => void }) {
 function ChipsStep({
   tenure,
   location,
+  presets,
   onPick,
   onChangeTenure,
   onChangeZip,
@@ -839,7 +869,8 @@ function ChipsStep({
 }: {
   tenure: Tenure;
   location: Location | null;
-  onPick: (text: string) => void;
+  presets: StarterPreset[];
+  onPick: (preset: StarterPreset) => void;
   onChangeTenure: () => void;
   onChangeZip: () => void;
   disabled: boolean;
@@ -882,19 +913,19 @@ function ChipsStep({
       </p>
 
       <div className="mt-8 grid w-full max-w-[480px] grid-cols-1 gap-3 sm:grid-cols-2">
-        {CHIPS[tenure].map((c) => (
+        {presets.map((p) => (
           <button
-            key={c.category}
+            key={p.slug}
             type="button"
             disabled={disabled}
-            onClick={() => onPick(c.prompt)}
+            onClick={() => onPick(p)}
             className="group flex flex-col items-start gap-1.5 rounded-xl border border-border bg-card p-4 text-left transition hover:border-primary hover:shadow-sm disabled:opacity-60"
           >
             <span className="text-xs font-semibold uppercase tracking-wide text-primary-dark">
-              {c.category}
+              {p.category}
             </span>
             <span className="text-sm text-muted-foreground transition group-hover:text-foreground">
-              {c.prompt}
+              {p.first_message}
             </span>
           </button>
         ))}

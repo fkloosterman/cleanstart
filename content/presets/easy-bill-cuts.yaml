@@ -1,0 +1,17 @@
+slug: easy-bill-cuts
+label: Easy ways to save
+category: Efficiency
+first_message: What are the easiest ways to cut my energy bill?
+profile_patches:
+  - op: set
+    slot: motivation_weights
+    provenance: stated
+    value:
+      cost: 1
+      carbon: 0.2
+      comfort: 0.3
+      resilience: 0.2
+      learning: 0.2
+tenures: []
+regions:
+  - US
