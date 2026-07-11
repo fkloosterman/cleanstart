@@ -9,6 +9,7 @@ import {
 } from "@/lib/prompts/inspector";
 import { extractProfilePatches } from "@/lib/profile/extractor";
 import { createExtractionGenerate } from "@/lib/profile/extractor.server";
+import { retrieveGrounding } from "@/lib/content/retrieval.server";
 import { normalizeProfile, slotValue } from "@/lib/profile/normalize";
 import { applyPatches } from "@/lib/profile/patches";
 import { readiness } from "@/lib/profile/readiness";
@@ -122,7 +123,11 @@ export const Route = createFileRoute("/api/chat")({
         const lane = deriveLane(slotValue(currentProfile, "motivation_weights"));
         const gate = reportGate(currentProfile, session.readiness_reached_at);
         const stage = deriveStage(currentProfile, lane.framing, { reportGateOpen: gate.open });
-        const contextInput = { profile: currentProfile, lane, stage };
+        // Grounding retrieval (WP3.4): the top library components for this
+        // profile feed the prompt so the agent cites and shows only library
+        // material. Resilient — an empty result simply omits the grounding block.
+        const retrieved = await retrieveGrounding(currentProfile);
+        const contextInput = { profile: currentProfile, lane, stage, retrieved };
         const system = buildContext(contextInput);
 
         // Dev prompt inspector (off in prod): stream the assembled prompt,

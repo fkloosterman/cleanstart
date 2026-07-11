@@ -109,6 +109,9 @@ describe("buildContext — assembled prompt (§5.3)", () => {
         title: "Community solar for renters",
         summary: "Subscribe to a shared solar array and get bill credits — no rooftop needed.",
         sources: [{ label: "Community Solar 101", publisher: "DOE" }],
+        figures: [
+          { slug: "community-solar-diagram", alt: "A shared solar array serving several homes" },
+        ],
       },
     ];
     expect(
@@ -169,5 +172,20 @@ describe("buildContext — behavioral guarantees", () => {
     ]);
     expect(grounded).toContain("Grounding —");
     expect(grounded).toContain("Heat pumps 101");
+    expect(grounded).toContain("[x]"); // the citable slug is shown to the agent
+  });
+
+  it("teaches the inline cite + figure directives when grounding is present", () => {
+    const grounded = build(RENTER_LOWER_BILLS, [
+      {
+        slug: "hp",
+        title: "Heat pumps 101",
+        summary: "How they move heat.",
+        figures: [{ slug: "hp-cycle", alt: "the refrigerant cycle" }],
+      },
+    ]);
+    expect(grounded).toContain("[cite:<slug>]");
+    expect(grounded).toContain("[figure:<slug>]");
+    expect(grounded).toContain("hp-cycle"); // the available figure is named
   });
 });

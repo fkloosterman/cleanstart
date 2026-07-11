@@ -11,6 +11,7 @@ import {
   ConversationScrollButton,
 } from "@/components/ai-elements/conversation";
 import { Message, MessageContent, MessageResponse } from "@/components/ai-elements/message";
+import { AssistantMessage } from "@/components/chat/AssistantMessage";
 import {
   PromptInput,
   PromptInputTextarea,
@@ -167,15 +168,20 @@ function GuestChatPage() {
                 description="Ask anything about solar, heat pumps, EVs, weatherization, or incentives."
               />
             ) : (
-              messages.map((m) => (
-                <Message key={m.id} from={m.role === "user" ? "user" : "assistant"}>
-                  <MessageContent>
-                    <MessageResponse>
-                      {m.parts.map((p) => (p.type === "text" ? p.text : "")).join("")}
-                    </MessageResponse>
-                  </MessageContent>
-                </Message>
-              ))
+              messages.map((m) => {
+                const text = m.parts.map((p) => (p.type === "text" ? p.text : "")).join("");
+                return (
+                  <Message key={m.id} from={m.role === "user" ? "user" : "assistant"}>
+                    <MessageContent>
+                      {m.role === "assistant" ? (
+                        <AssistantMessage text={text} />
+                      ) : (
+                        <MessageResponse>{text}</MessageResponse>
+                      )}
+                    </MessageContent>
+                  </Message>
+                );
+              })
             )}
             {status === "submitted" && (
               <Message from="assistant">
