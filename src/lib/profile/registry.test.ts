@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  MOTIVATION_DIMENSIONS,
   PREFERENCE_ENTITY_NAMESPACES,
   SLOT_NAMES,
   SLOT_REGISTRY,
@@ -59,6 +60,21 @@ describe("SLOT_REGISTRY", () => {
     expect(slotValueSchema("goals").safeParse([{ text: "lower bills" }]).success).toBe(true);
     expect(slotValueSchema("goals").safeParse({ text: "lower bills" }).success).toBe(false);
     expect(slotValueSchema("tenure").safeParse("renter").success).toBe(true);
+  });
+
+  it("keeps MOTIVATION_DIMENSIONS in lockstep with the motivation_weights schema (§5.1)", () => {
+    // The schema is spelled out for a precise inferred type; this guards
+    // the const array (which the lanes derive from) against drift.
+    const vector = Object.fromEntries(MOTIVATION_DIMENSIONS.map((d) => [d, 0.2]));
+    const parsed = slotValueSchema("motivation_weights").safeParse(vector);
+    expect(parsed.success).toBe(true);
+    // A vector missing any declared dimension must fail — proving the
+    // schema requires exactly the dimensions the array lists.
+    for (const dim of MOTIVATION_DIMENSIONS) {
+      const partial = { ...vector };
+      delete partial[dim];
+      expect(slotValueSchema("motivation_weights").safeParse(partial).success, dim).toBe(false);
+    }
   });
 
   it("preserves unknown fields on object values (additive evolution, §11)", () => {
