@@ -21,6 +21,21 @@ import { join } from "node:path";
 import { validateContent } from "@/lib/content/validate";
 import { syncContent } from "@/lib/content/sync";
 
+/**
+ * A non-fatal skip must never be a silent one: print a delimited banner with
+ * the reason and a concrete recommended action, so it stands out in build logs
+ * and the reader knows exactly what to do.
+ */
+function warnBanner(reason: string, actions: string[]): void {
+  const line = "─".repeat(64);
+  console.warn(`\n${line}\n⚠  CONTENT SYNC SKIPPED — the deploy continues, but the`);
+  console.warn(`   content tables were NOT updated.\n`);
+  console.warn(`   Reason: ${reason}\n`);
+  console.warn(`   Recommended action:`);
+  for (const a of actions) console.warn(`     • ${a}`);
+  console.warn(`${line}\n`);
+}
+
 const ROOT = join(import.meta.dirname, "..");
 const CONTENT_DIR = join(ROOT, "content");
 const VOCAB_PATH = join(CONTENT_DIR, "vocabulary.yaml");
@@ -34,9 +49,16 @@ if (!ok) {
 }
 
 if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
-  console.warn(
-    "⚠ SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY not set — skipping content sync " +
-      "(content is valid). Set them in the deploy environment to enable sync.",
+  const missing = [
+    ...(!process.env.SUPABASE_URL ? ["SUPABASE_URL"] : []),
+    ...(!process.env.SUPABASE_SERVICE_ROLE_KEY ? ["SUPABASE_SERVICE_ROLE_KEY"] : []),
+  ].join(", ");
+  warnBanner(
+    `service-role env not set (${missing}). Content is valid, but there's no DB to write.`,
+    [
+      `Set ${missing} in this environment's variables (Vercel → Project → Settings → Environment Variables), then redeploy.`,
+      `To sync locally, add them to .env and run \`bun run sync:content\`.`,
+    ],
   );
   process.exit(0);
 }
@@ -52,8 +74,24 @@ try {
 } catch (err) {
   // Non-fatal by design: the content is valid, but the DB couldn't be written
   // (migration not applied yet, transient outage, bad key). Deploy anyway —
-  // the app reads existing content and degrades gracefully — and surface it
-  // loudly so a persistently-failing sync is visible in build logs.
-  console.warn(`⚠ content sync skipped — DB not updated: ${(err as Error).message}`);
+  // the app reads existing content and degrades gracefully — but surface it
+  // loudly, with an action, so a persistently-failing sync is never silent.
+  const message = (err as Error).message;
+  // PostgREST reports a missing table as "Could not find the table … in the
+  // schema cache"; Postgres itself says "relation … does not exist".
+  const migrationMissing = /could not find the table|does not exist|schema cache/i.test(message);
+  warnBanner(
+    `the content tables could not be written: ${message}`,
+    migrationMissing
+      ? [
+          `The content tables don't exist yet — apply migration #2 to this database:`,
+          `\`bunx supabase link --project-ref <ref>\` then \`bunx supabase db push\` (see DATABASE.md).`,
+          `Then redeploy, or run \`bun run sync:content\` to populate the tables.`,
+        ]
+      : [
+          `Check SUPABASE_SERVICE_ROLE_KEY is valid for this database and that Supabase is reachable.`,
+          `Re-run \`bun run sync:content\` (or redeploy) once resolved — upserts are idempotent.`,
+        ],
+  );
 }
 process.exit(0);
