@@ -9,6 +9,12 @@ import { profileFromUpfront, type UpfrontInput } from "@/lib/profile/upfront";
 import { emptyProfile } from "@/lib/profile/normalize";
 import { PROFILE_PATCH_PART_TYPE, readProfilePatchData } from "@/lib/profile/stream";
 import {
+  CONTEXT_DEBUG_PART_TYPE,
+  readContextDebugData,
+  type ContextDebugData,
+} from "@/lib/prompts/inspector";
+import { PromptInspector } from "@/components/PromptInspector";
+import {
   GUEST_CHAT_KEY,
   GUEST_TENURE_KEY,
   GUEST_LOCATION_KEY,
@@ -205,6 +211,9 @@ function ChatPage() {
   // sessions.readiness_reached_at. Hydrated from storage after mount (below),
   // stamped the first time the gate opens, and cleared on start-over.
   const [reachedAt, setReachedAt] = useState<string | null>(null);
+  // Assembled system prompt for the last turn — set only when the server
+  // streams it (dev prompt inspector, off in prod).
+  const [contextDebug, setContextDebug] = useState<ContextDebugData | null>(null);
   const stampReadiness = useCallback((at: string) => {
     setReachedAt(at);
     writeGuestReadinessReachedAt(at);
@@ -276,6 +285,10 @@ function ChatPage() {
     // conversation. `applyPatches` validates and enforces edited-wins, so a
     // malformed payload can never corrupt the profile.
     onData(part) {
+      if (part.type === CONTEXT_DEBUG_PART_TYPE) {
+        setContextDebug(readContextDebugData(part.data));
+        return;
+      }
       if (part.type !== PROFILE_PATCH_PART_TYPE) return;
       const patches = readProfilePatchData(part.data);
       if (patches.length === 0) return;
@@ -507,40 +520,45 @@ function ChatPage() {
                     <RotateCcw className="mr-1 h-4 w-4" /> Start over
                   </Button>
                 </div>
-                {gate.open ? (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => {
-                      try {
-                        const transcript = messages
-                          .map((m) => ({
-                            role: m.role,
-                            content: m.parts.map((p) => (p.type === "text" ? p.text : "")).join(""),
-                          }))
-                          .filter((m) => m.content.trim().length > 0);
-                        window.sessionStorage.setItem(
-                          "cleanstart.guest-report.v1",
-                          JSON.stringify({ tenure, location, messages: transcript }),
-                        );
-                      } catch {
-                        // ignore
-                      }
-                      navigate({ to: "/report", search: { guest: true } });
-                    }}
-                  >
-                    <FileText className="mr-1 h-4 w-4" /> Generate report
-                  </Button>
-                ) : (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    disabled
-                    title={`Still need: ${missingSlotLabels(gate.missing).join(", ")}`}
-                  >
-                    <FileText className="mr-1 h-4 w-4" /> Generate report
-                  </Button>
-                )}
+                <div className="flex items-center gap-2">
+                  {contextDebug ? <PromptInspector data={contextDebug} /> : null}
+                  {gate.open ? (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        try {
+                          const transcript = messages
+                            .map((m) => ({
+                              role: m.role,
+                              content: m.parts
+                                .map((p) => (p.type === "text" ? p.text : ""))
+                                .join(""),
+                            }))
+                            .filter((m) => m.content.trim().length > 0);
+                          window.sessionStorage.setItem(
+                            "cleanstart.guest-report.v1",
+                            JSON.stringify({ tenure, location, messages: transcript }),
+                          );
+                        } catch {
+                          // ignore
+                        }
+                        navigate({ to: "/report", search: { guest: true } });
+                      }}
+                    >
+                      <FileText className="mr-1 h-4 w-4" /> Generate report
+                    </Button>
+                  ) : (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled
+                      title={`Still need: ${missingSlotLabels(gate.missing).join(", ")}`}
+                    >
+                      <FileText className="mr-1 h-4 w-4" /> Generate report
+                    </Button>
+                  )}
+                </div>
               </div>
               {/* What still gates the report (WP1.7) — visible, not just a tooltip. */}
               {!gate.open && (

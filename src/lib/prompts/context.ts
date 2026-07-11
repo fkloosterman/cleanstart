@@ -204,22 +204,65 @@ export interface BuildContextInput {
   retrieved?: RetrievedComponent[];
 }
 
+/** The named pieces the prompt is assembled from (drives the dev inspector). */
+export type ContextSectionId =
+  | "base"
+  | "profile"
+  | "framing"
+  | "stage"
+  | "grounding"
+  | "still_to_learn"
+  | "brevity";
+
+export interface ContextSection {
+  id: ContextSectionId;
+  /** Human label for the piece (shown in the prompt inspector). */
+  label: string;
+  text: string;
+}
+
+const SECTION_LABELS: Record<ContextSectionId, string> = {
+  base: "Voice & boundaries",
+  profile: "What you already know",
+  framing: "Motivation & lane",
+  stage: "Stage",
+  grounding: "Grounding (retrieved)",
+  still_to_learn: "Still to learn",
+  brevity: "How to answer",
+};
+
 /**
- * Assemble the chat system prompt (§5.3). Order: base voice → what we know
- * → what they care about (lane) → stage → grounding → what to learn next →
- * brevity policy. Sections with nothing to say are omitted so the prompt
- * stays tight.
+ * Assemble the prompt as an ordered list of labeled sections (§5.3): base
+ * voice → what we know → what they care about (lane) → stage → grounding →
+ * what to learn next → brevity policy. Sections with nothing to say are
+ * omitted. `buildContext` joins these into the final string; the dev prompt
+ * inspector renders them individually, so the two never diverge.
  */
-export function buildContext({ profile, lane, stage, retrieved = [] }: BuildContextInput): string {
-  return [
-    BASE,
-    profileSummary(profile),
-    framingBlock(lane),
-    STAGE_NOTES[stage],
-    groundingBlock(retrieved),
-    stillToLearn(profile, lane),
-    BREVITY,
-  ]
-    .filter(Boolean)
+export function buildContextSections({
+  profile,
+  lane,
+  stage,
+  retrieved = [],
+}: BuildContextInput): ContextSection[] {
+  const raw: [ContextSectionId, string | null][] = [
+    ["base", BASE],
+    ["profile", profileSummary(profile)],
+    ["framing", framingBlock(lane)],
+    ["stage", STAGE_NOTES[stage]],
+    ["grounding", groundingBlock(retrieved)],
+    ["still_to_learn", stillToLearn(profile, lane)],
+    ["brevity", BREVITY],
+  ];
+  const sections: ContextSection[] = [];
+  for (const [id, text] of raw) {
+    if (text) sections.push({ id, label: SECTION_LABELS[id], text });
+  }
+  return sections;
+}
+
+/** The assembled chat system prompt — the joined section texts. */
+export function buildContext(input: BuildContextInput): string {
+  return buildContextSections(input)
+    .map((s) => s.text)
     .join("\n\n");
 }

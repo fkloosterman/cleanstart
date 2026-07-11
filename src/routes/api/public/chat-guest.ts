@@ -1,6 +1,11 @@
 import { createModelForPurpose } from "@/lib/ai-gateway.server";
 import { deriveLane } from "@/lib/lanes/derive";
-import { buildContext, deriveStage } from "@/lib/prompts/context";
+import { buildContext, buildContextSections, deriveStage } from "@/lib/prompts/context";
+import {
+  CONTEXT_DEBUG_PART_TYPE,
+  promptInspectorEnabled,
+  type ContextDebugData,
+} from "@/lib/prompts/inspector";
 import { extractProfilePatches } from "@/lib/profile/extractor";
 import { createExtractionGenerate } from "@/lib/profile/extractor.server";
 import { normalizeProfile, slotValue } from "@/lib/profile/normalize";
@@ -81,13 +86,25 @@ export const Route = createFileRoute("/api/public/chat-guest")({
         // them established and the agent won't re-ask (§4.8, §5.3).
         const currentProfile = normalizeProfile(body.profile);
         const lane = deriveLane(slotValue(currentProfile, "motivation_weights"));
-        const system = buildContext({
-          profile: currentProfile,
-          lane,
-          // Guests carry no server-side readiness ratchet; stage follows the
-          // current profile's sufficiency for the derived lane.
-          stage: deriveStage(currentProfile, lane.framing),
-        });
+        // Guests carry no server-side readiness ratchet; stage follows the
+        // current profile's sufficiency for the derived lane.
+        const stage = deriveStage(currentProfile, lane.framing);
+        const contextInput = { profile: currentProfile, lane, stage };
+        const system = buildContext(contextInput);
+
+        // Dev prompt inspector (off in prod): stream the assembled prompt,
+        // section by section, so a developer can see what the model was told.
+        const inspector: ContextDebugData | null = promptInspectorEnabled(process.env)
+          ? {
+              meta: {
+                lanePrimary: lane.primary,
+                laneFraming: lane.framing,
+                laneMixed: lane.mixed,
+                stage,
+              },
+              sections: buildContextSections(contextInput),
+            }
+          : null;
 
         const model = createModelForPurpose("chat", OPENROUTER_API_KEY);
         const modelMessages = await convertToModelMessages(trimmed);
@@ -98,6 +115,12 @@ export const Route = createFileRoute("/api/public/chat-guest")({
         const stream = createUIMessageStream({
           originalMessages: trimmed,
           execute: async ({ writer }) => {
+            // Dev-only: hand the client the assembled prompt up front (transient,
+            // never persisted). No-op when the inspector is disabled.
+            if (inspector) {
+              writer.write({ type: CONTEXT_DEBUG_PART_TYPE, data: inspector, transient: true });
+            }
+
             const result = streamText({ model, system, messages: modelMessages });
             // Forward the reply as it streams — zero added time-to-first-token.
             writer.merge(result.toUIMessageStream());
