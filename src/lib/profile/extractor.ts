@@ -30,6 +30,7 @@
 import { slotFilled } from "@/lib/profile/normalize";
 import type { ProfilePatch } from "@/lib/profile/patches";
 import {
+  MOTIVATION_DIMENSIONS,
   PREFERENCE_ENTITY_NAMESPACES,
   SLOT_NAMES,
   SLOT_REGISTRY,
@@ -78,6 +79,17 @@ PATCH OPERATIONS — output a JSON array (possibly empty). Each item:
     preferences entries are { "entity": "<namespace>:<slug>", "stance": "curious" | "interested" | "priority" | "ruled_out", "provenance": "stated" | "inferred", "note"?: string }.
     preference namespaces: ${PREFERENCE_ENTITY_NAMESPACES.join(", ")} (e.g. tech:solar, approach:diy, financing:loan).
 - { "op": "clear", "slot": <name>, "provenance": "stated" }  — only when the user retracts something.
+
+MOTIVATION (motivation_weights) — the vector that drives everything downstream:
+- The five weights are ${MOTIVATION_DIMENSIONS.join(", ")}. They are RELATIVE (0-1); "set" the WHOLE vector, giving the strongest driver the highest weight and the rest smaller or zero.
+- Move the weights ONLY when the user signals what actually drives them — in words ("I just want to save money", "after the blackout I want backup power") or an unmistakable implication (a stated goal, a preset). A raised weight needs a reason in THIS exchange.
+- NEVER invent motivation from silence, from a polite reply, or from merely naming a technology — "how do heat pumps work?" is curiosity about a topic, not a comfort/carbon motivation. When in doubt, emit nothing for this slot.
+- Re-set the vector when the emphasis genuinely shifts; otherwise leave it unchanged.
+
+STANCES (preferences) — how the user feels about an OPTION they could accept or decline:
+- "interested"/"priority"/"curious" when the user is drawn to an option; "ruled_out" ONLY when they explicitly decline, reject, or say it won't work for them.
+- Namespace the entity (${PREFERENCE_ENTITY_NAMESPACES.join(", ")}), e.g. tech:solar. Add a short "note" when the user gives a reason ("shaded roof", "no room").
+- NEVER infer "ruled_out" from silence — a user who hasn't mentioned EVs has not declined them. Absence of a stance is the correct state; do not manufacture one.
 
 RULES:
 - Output ONLY the JSON array. No prose, no markdown, no code fences.

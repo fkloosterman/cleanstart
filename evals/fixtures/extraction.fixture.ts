@@ -10,8 +10,9 @@ import type { EvalFixtureModule } from "../types";
  * Scope note: these cover the WP1.4 baseline — plain slot capture, "no new
  * information", and the edited-wins guarantee. Motivation weights,
  * technology-stance preferences, ruled-out capture, and the
- * never-infer-from-silence rule get their own fixtures in WP2.3, when the
- * extractor is tuned to maintain those slots.
+ * never-infer-from-silence rule are covered separately in
+ * `motivation.fixture.ts` (WP2.3), where the extractor is tuned to maintain
+ * those slots.
  */
 const fixtures: EvalFixtureModule = [
   {

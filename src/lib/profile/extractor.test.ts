@@ -10,7 +10,7 @@ import {
   summarizeProfile,
   type GenerateFn,
 } from "@/lib/profile/extractor";
-import { SLOT_NAMES } from "@/lib/profile/registry";
+import { MOTIVATION_DIMENSIONS, SLOT_NAMES } from "@/lib/profile/registry";
 
 describe("buildExtractionSystem — registry-derived (§4.2)", () => {
   const system = buildExtractionSystem();
@@ -28,6 +28,24 @@ describe("buildExtractionSystem — registry-derived (§4.2)", () => {
     expect(system).toContain("ruled_out");
     expect(system.toLowerCase()).toContain("silence");
     expect(system).toContain('Never emit "edited" or "propagated"');
+  });
+
+  it("names the five motivation dimensions and how to weight them (WP2.3)", () => {
+    for (const dim of MOTIVATION_DIMENSIONS) expect(system, dim).toContain(dim);
+    expect(system).toContain("RELATIVE");
+  });
+
+  it("forbids inventing motivation from silence or a bare topic mention (WP2.3)", () => {
+    // The never-infer-from-silence discipline extends to the motivation
+    // vector, not just ruled_out stances.
+    expect(system.toLowerCase()).toContain("never invent motivation from silence");
+    expect(system).toContain("not a comfort/carbon motivation");
+  });
+
+  it("guides stance capture: interest vs ruled_out, with namespaced entities (WP2.3)", () => {
+    expect(system).toContain("STANCES");
+    expect(system).toContain("tech:solar");
+    expect(system).toContain('"ruled_out" ONLY when they explicitly decline');
   });
 });
 

@@ -20,6 +20,7 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { generateText } from "ai";
 import { createModelForPurpose } from "@/lib/ai-gateway.server";
+import { deriveLane } from "@/lib/lanes/derive";
 import { resolveModelConfig } from "@/lib/model-map";
 import { normalizeProfile, slotFilled } from "@/lib/profile/normalize";
 import { applyPatches } from "@/lib/profile/patches";
@@ -80,7 +81,16 @@ function deepEqual(a: unknown, b: unknown): boolean {
   return false;
 }
 
-function checkExpectation(exp: ExtractionExpectation, profile: SessionProfile): string | null {
+function preferenceEntries(profile: SessionProfile): { entity?: string; stance?: string }[] {
+  const value = profile.preferences.value;
+  return Array.isArray(value) ? (value as { entity?: string; stance?: string }[]) : [];
+}
+
+function checkExpectation(
+  exp: ExtractionExpectation,
+  profile: SessionProfile,
+  base: SessionProfile,
+): string | null {
   switch (exp.kind) {
     case "slot-filled":
       return slotFilled(profile[exp.slot]) ? null : `expected ${exp.slot} to be filled`;
@@ -99,6 +109,28 @@ function checkExpectation(exp: ExtractionExpectation, profile: SessionProfile): 
         return text.toLowerCase().includes(needle);
       });
       return hit ? null : `expected ${exp.slot} to include an entry matching "${exp.text}"`;
+    }
+    case "slot-unchanged":
+      return deepEqual(profile[exp.slot].value, base[exp.slot].value)
+        ? null
+        : `expected ${exp.slot} to be unchanged (${JSON.stringify(base[exp.slot].value)}), got ${JSON.stringify(profile[exp.slot].value)}`;
+    case "motivation-lane": {
+      const { primary } = deriveLane(profile.motivation_weights.value);
+      return primary === exp.lane
+        ? null
+        : `expected motivation to derive lane "${exp.lane}", got "${primary}" (weights ${JSON.stringify(profile.motivation_weights.value)})`;
+    }
+    case "preference-stance": {
+      const hit = preferenceEntries(profile).some(
+        (p) => p.entity === exp.entity && p.stance === exp.stance,
+      );
+      return hit
+        ? null
+        : `expected a "${exp.stance}" stance on ${exp.entity}, got ${JSON.stringify(preferenceEntries(profile))}`;
+    }
+    case "preference-absent": {
+      const hit = preferenceEntries(profile).some((p) => p.entity === exp.entity);
+      return hit ? `expected no stance on ${exp.entity}, but one was recorded` : null;
     }
   }
 }
@@ -138,7 +170,7 @@ async function runExtraction(fixture: ExtractionFixture, apiKey: string): Promis
   );
   const { profile } = applyPatches(base, patches);
   return fixture.expect
-    .map((e) => checkExpectation(e, profile))
+    .map((e) => checkExpectation(e, profile, base))
     .filter((e): e is string => e !== null);
 }
 

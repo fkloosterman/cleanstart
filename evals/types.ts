@@ -1,5 +1,6 @@
+import type { LaneId } from "@/lib/lanes/playbooks";
 import type { ModelPurpose } from "@/lib/model-map";
-import type { SlotName } from "@/lib/profile/registry";
+import type { Preference, SlotName } from "@/lib/profile/registry";
 
 /**
  * One eval assertion against the model's text output. Extend this union as
@@ -38,9 +39,16 @@ export type ExtractionExpectation =
   | { kind: "slot-filled"; slot: SlotName }
   | { kind: "slot-empty"; slot: SlotName }
   | { kind: "slot-value"; slot: SlotName; value: unknown }
-  | { kind: "list-includes"; slot: SlotName; text: string };
-// WP2.3 adds preference/motivation expectation kinds when the extractor
-// learns motivation weights and technology stances.
+  | { kind: "list-includes"; slot: SlotName; text: string }
+  // WP2.3 — motivation & stance expectations:
+  /** The slot's value is exactly what the base profile held (extraction left it alone). */
+  | { kind: "slot-unchanged"; slot: SlotName }
+  /** The lane derived from motivation_weights after extraction (argmax). */
+  | { kind: "motivation-lane"; lane: LaneId }
+  /** A preference for `entity` exists with this stance. */
+  | { kind: "preference-stance"; entity: string; stance: Preference["stance"] }
+  /** No preference for `entity` exists — the never-infer-from-silence guard. */
+  | { kind: "preference-absent"; entity: string };
 
 /**
  * An extraction fixture: a starting profile plus the latest exchange; the
