@@ -12,6 +12,12 @@ import { emptyProfile, normalizeProfile } from "@/lib/profile/normalize";
 import type { SessionProfile } from "@/lib/profile/registry";
 import { missingSlotLabels } from "@/lib/profile/readiness-gate";
 import { PROFILE_PATCH_PART_TYPE, readProfilePatchData } from "@/lib/profile/stream";
+import {
+  CONTEXT_DEBUG_PART_TYPE,
+  readContextDebugData,
+  type ContextDebugData,
+} from "@/lib/prompts/inspector";
+import { PromptInspector } from "@/components/PromptInspector";
 import { useSessionProfile } from "@/hooks/use-session-profile";
 import { useReadinessGate } from "@/hooks/use-readiness-gate";
 import { ProfilePanel } from "@/components/ProfileSidebar";
@@ -207,6 +213,9 @@ function ChatConversation({
   // edit that drops a required slot can't re-lock the report. The DB stamp is
   // written server-side per turn (api/chat.ts) — this is the read-side memory.
   const [reachedAt, setReachedAt] = useState<string | null>(initialReachedAt);
+  // The assembled system prompt for the last turn — populated only when the
+  // server streams it (dev prompt inspector, off in prod).
+  const [contextDebug, setContextDebug] = useState<ContextDebugData | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const sentInitialRef = useRef(false);
 
@@ -256,6 +265,10 @@ function ChatConversation({
     // already wrote sessions.profile — but applyPatches is idempotent enough
     // that a redundant write would be harmless.
     onData(part) {
+      if (part.type === CONTEXT_DEBUG_PART_TYPE) {
+        setContextDebug(readContextDebugData(part.data));
+        return;
+      }
       if (part.type !== PROFILE_PATCH_PART_TYPE) return;
       const patches = readProfilePatchData(part.data);
       profileStore.applyProfilePatches(patches);
@@ -317,6 +330,7 @@ function ChatConversation({
               </Link>
             </Button>
             <div className="flex items-center gap-2">
+              {contextDebug ? <PromptInspector data={contextDebug} /> : null}
               <Button
                 variant="outline"
                 size="sm"

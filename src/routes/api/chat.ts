@@ -1,7 +1,12 @@
 import { createModelForPurpose } from "@/lib/ai-gateway.server";
 import { deriveLane } from "@/lib/lanes/derive";
 import { previewGuardMessage } from "@/lib/preview-guard";
-import { buildContext, deriveStage } from "@/lib/prompts/context";
+import { buildContext, buildContextSections, deriveStage } from "@/lib/prompts/context";
+import {
+  CONTEXT_DEBUG_PART_TYPE,
+  promptInspectorEnabled,
+  type ContextDebugData,
+} from "@/lib/prompts/inspector";
 import { extractProfilePatches } from "@/lib/profile/extractor";
 import { createExtractionGenerate } from "@/lib/profile/extractor.server";
 import { normalizeProfile, slotValue } from "@/lib/profile/normalize";
@@ -116,11 +121,23 @@ export const Route = createFileRoute("/api/chat")({
         // more persona enum or assistant-turn counting.
         const lane = deriveLane(slotValue(currentProfile, "motivation_weights"));
         const gate = reportGate(currentProfile, session.readiness_reached_at);
-        const system = buildContext({
-          profile: currentProfile,
-          lane,
-          stage: deriveStage(currentProfile, lane.framing, { reportGateOpen: gate.open }),
-        });
+        const stage = deriveStage(currentProfile, lane.framing, { reportGateOpen: gate.open });
+        const contextInput = { profile: currentProfile, lane, stage };
+        const system = buildContext(contextInput);
+
+        // Dev prompt inspector (off in prod): stream the assembled prompt,
+        // section by section, so a developer can see what the model was told.
+        const inspector: ContextDebugData | null = promptInspectorEnabled(process.env)
+          ? {
+              meta: {
+                lanePrimary: lane.primary,
+                laneFraming: lane.framing,
+                laneMixed: lane.mixed,
+                stage,
+              },
+              sections: buildContextSections(contextInput),
+            }
+          : null;
 
         const model = createModelForPurpose("chat", OPENROUTER_API_KEY);
         const modelMessages = await convertToModelMessages(messages);
@@ -129,6 +146,12 @@ export const Route = createFileRoute("/api/chat")({
         const stream = createUIMessageStream({
           originalMessages: messages,
           execute: async ({ writer }) => {
+            // Dev-only: hand the client the assembled prompt up front (transient,
+            // never persisted). No-op when the inspector is disabled.
+            if (inspector) {
+              writer.write({ type: CONTEXT_DEBUG_PART_TYPE, data: inspector, transient: true });
+            }
+
             const result = streamText({ model, system, messages: modelMessages });
             // Forward the reply as it streams — zero added time-to-first-token.
             writer.merge(result.toUIMessageStream());
