@@ -1,9 +1,9 @@
 import { createModelForPurpose } from "@/lib/ai-gateway.server";
-import { buildSystemPrompt, type Persona } from "@/lib/prompts/chat";
+import { deriveLane } from "@/lib/lanes/derive";
+import { buildContext, deriveStage } from "@/lib/prompts/context";
 import { extractProfilePatches } from "@/lib/profile/extractor";
 import { createExtractionGenerate } from "@/lib/profile/extractor.server";
-import { normalizeProfile } from "@/lib/profile/normalize";
-import { readiness } from "@/lib/profile/readiness";
+import { normalizeProfile, slotValue } from "@/lib/profile/normalize";
 import { PROFILE_PATCH_PART_TYPE } from "@/lib/profile/stream";
 import { createFileRoute } from "@tanstack/react-router";
 import {
@@ -17,7 +17,10 @@ import {
 type Tenure = "homeowner" | "renter" | "curious" | null;
 type Location = { zip: string; city: string; state: string; utility: string } | null;
 type Body = {
-  persona?: Persona;
+  // The onboarding fields are still accepted for wire compatibility, but the
+  // prompt is now built from `profile` (which the client seeds from these at
+  // session start, §4.8) — the same profile-driven path as the signed-in
+  // endpoint. They are no longer read here.
   tenure?: Tenure;
   location?: Location;
   messages?: UIMessage[];
@@ -30,31 +33,6 @@ function textOf(msg: UIMessage) {
     .map((p) => (p.type === "text" ? p.text : ""))
     .join("")
     .trim();
-}
-
-const TENURE_LABEL: Record<NonNullable<Tenure>, string> = {
-  homeowner: "homeowner",
-  renter: "renter",
-  curious: "exploring (not sure yet)",
-};
-
-function buildContextSystem(tenureValue: string, city: string, state: string, utility: string) {
-  return `You are Clean Start, a friendly and knowledgeable clean energy guide for households. Your job is to educate — never to sell. Keep answers conversational, plain-language, and under 120 words.
-
-The user has already provided the following information during onboarding. Do NOT ask for any of this again under any circumstances:
-- Home ownership status: ${tenureValue}
-- City: ${city}
-- State: ${state}
-- Utility provider: ${utility}
-
-Use this context to personalize every response immediately and directly. Never ask the user if they own or rent. Never ask what state, city, zip code, or utility they are on. This information is already known. Treat it as established fact in every message.
-
-Personalization rules:
-- If tenure is homeowner: focus on panel installation, federal tax credits (30%), and utility rebate programs.
-- If tenure is renter: focus on community solar, portable upgrades, and renter-eligible credits.
-- If tenure is exploring: give accessible overviews.
-- If city and state are known: reference them by name and surface programs specific to that utility territory.
-- If utility is known: reference utility-specific programs and net metering rules for that provider.`;
 }
 
 // Very small in-memory rate limiter, per worker instance. Best-effort only.
@@ -96,48 +74,20 @@ export const Route = createFileRoute("/api/public/chat-guest")({
         // Cap guest conversation length to keep cost bounded
         const trimmed = messages.slice(-20);
 
-        const assistantTurnCount = trimmed.filter((m) => m.role === "assistant").length;
-        const tenure = body.tenure ?? null;
-        const location = body.location ?? null;
-        const personaFromTenure: Persona =
-          tenure === "homeowner" || tenure === "renter" || tenure === "curious" ? tenure : null;
-
-        // Resolve placeholders up front so the system prompt never contains
-        // unfilled [BRACKET] tokens — the model treats those as unknown and
-        // re-asks the user.
-        const tenureValue = tenure ? TENURE_LABEL[tenure] : "not provided";
-        const city = location?.city ?? "not provided";
-        const state = location?.state ?? "not provided";
-        const utility = location?.utility ?? "not provided";
-
-        // Safety log: if any of these read "not provided", the bug is in how
-        // onboarding persists tenure/location, not in this handler.
-        console.log(
-          "Injecting context — tenure:",
-          tenureValue,
-          "city:",
-          city,
-          "state:",
-          state,
-          "utility:",
-          utility,
-        );
-
-        // When onboarding context exists, skip the base prompt's DISCOVERY
-        // stage (which instructs the model to ask getting-to-know-you
-        // questions) by pushing the turn counter past it.
-        const contextKnownBoost = (tenure ? 1 : 0) + (location ? 1 : 0);
-        // Extraction inputs: the profile the client sent (normalized on read,
-        // so an old/junk shape heals) and this turn's user message. The client
-        // owns persistence — the server just returns patches on the stream.
+        // Extraction + prompt inputs: the profile the client sent (normalized
+        // on read, so an old/junk shape heals). The client owns persistence —
+        // the server just returns patches on the stream. The upfront slots
+        // (tenure/region) already live in this profile, so buildContext marks
+        // them established and the agent won't re-ask (§4.8, §5.3).
         const currentProfile = normalizeProfile(body.profile);
-        const baseSystem = buildSystemPrompt({
-          persona: body.persona ?? personaFromTenure,
-          assistantTurnCount: assistantTurnCount + contextKnownBoost,
-          // Nudge the agent toward the slots that still gate the report (WP1.7).
-          missing: readiness(currentProfile).missing,
+        const lane = deriveLane(slotValue(currentProfile, "motivation_weights"));
+        const system = buildContext({
+          profile: currentProfile,
+          lane,
+          // Guests carry no server-side readiness ratchet; stage follows the
+          // current profile's sufficiency for the derived lane.
+          stage: deriveStage(currentProfile, lane.framing),
         });
-        const system = `${buildContextSystem(tenureValue, city, state, utility)}\n\n${baseSystem}`;
 
         const model = createModelForPurpose("chat", OPENROUTER_API_KEY);
         const modelMessages = await convertToModelMessages(trimmed);
