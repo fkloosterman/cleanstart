@@ -65,6 +65,32 @@ matches its schema (unknown fields are rejected — fail loud on typos), media
 `prerequisites` / `media` / `sources` reference resolves to a real slug (with
 no prerequisite cycles). Errors are grouped by file with an actionable message.
 
+## Coverage survey
+
+```
+bun run corpus-report
+```
+
+Where `validate:content` asks "is each file correct?", the corpus report asks
+"is the library **complete enough**?" It runs the real candidate pipeline (the
+same filter + scorer the report composer uses) over a grid of synthetic
+profiles spanning the launch scope (tenure × region × lane, plus every preset),
+and prints, worst cell first:
+
+- **candidate pool size per cell** — the number that determines report quality;
+  the thinnest cells are your work queue;
+- **projected authored share** — the fraction of a report the composer would
+  have to write itself rather than cite from the library (WP3.6's merge gate);
+- **lane / technology coverage**, **kind mix**, **prerequisite reachability**
+  (components held back by an unpublished prerequisite), **freshness**
+  (`last_verified` age, expiring incentives), and **orphans** (unused media,
+  presets that resolve to too few components).
+
+Only `published` components count toward the pool metrics — a `draft` corpus
+reports as empty, which is accurate, not a bug. Runs in CI as informational
+output (never fails a PR); WP3.6 turns the authored-share gate hard. Add
+`--json` for the machine-readable report, `--gate` to exit non-zero over cap.
+
 ## Seed content
 
 The `heat-pump-*` files and the single media/preset/source here are

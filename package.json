@@ -12,6 +12,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "validate:content": "bun scripts/validate-content.ts",
+    "corpus-report": "bun scripts/corpus-report.ts",
     "sync:content": "bun scripts/sync-content.ts",
     "evals": "bun evals/run.ts",
     "format": "prettier --write ."

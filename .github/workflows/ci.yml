@@ -32,3 +32,9 @@ jobs:
 
       - name: Validate content
         run: bun run validate:content
+
+      # Informational only (WP3.3b): the corpus coverage survey prints candidate
+      # pool sizes, lane/technology coverage, and the projected authored share.
+      # It never fails CI here — WP3.6 turns the authored-share gate hard.
+      - name: Corpus coverage report
+        run: bun run corpus-report
