@@ -1,4 +1,5 @@
 import { createModelForPurpose } from "@/lib/ai-gateway.server";
+import { retrieveGrounding } from "@/lib/content/retrieval.server";
 import { deriveLane } from "@/lib/lanes/derive";
 import { buildContext, buildContextSections, deriveStage } from "@/lib/prompts/context";
 import {
@@ -89,7 +90,10 @@ export const Route = createFileRoute("/api/public/chat-guest")({
         // Guests carry no server-side readiness ratchet; stage follows the
         // current profile's sufficiency for the derived lane.
         const stage = deriveStage(currentProfile, lane.framing);
-        const contextInput = { profile: currentProfile, lane, stage };
+        // Grounding retrieval (WP3.4): same library shortlist as the signed-in
+        // path — guests get cited, library-grounded answers too. Resilient.
+        const retrieved = await retrieveGrounding(currentProfile);
+        const contextInput = { profile: currentProfile, lane, stage, retrieved };
         const system = buildContext(contextInput);
 
         // Dev prompt inspector (off in prod): stream the assembled prompt,
