@@ -1,94 +1,101 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import {
-  Leaf,
-  Shield,
-  Users,
-  BookOpen,
-  Mail,
-  Database,
-  Lock,
-  Trash2,
   FileText,
+  Lock,
+  Database,
+  Shield,
+  Trash2,
+  Cookie,
+  Mail,
   Scale,
   AlertTriangle,
   Ban,
   RefreshCw,
 } from "lucide-react";
 
-export const Route = createFileRoute("/about")({
+export const Route = createFileRoute("/privacy")({
   head: () => ({
     meta: [
-      { title: "About Clean Start · Privacy-First Energy Guidance" },
+      { title: "Privacy Policy & Terms of Service · Clean Start" },
       {
         name: "description",
         content:
-          "Clean Start is a vendor-neutral, privacy-first companion that helps households explore clean energy options through guided conversation.",
+          "Read Clean Start's Privacy Policy and Terms of Service — how we handle your data and the rules for using the app.",
       },
-      { property: "og:title", content: "About Clean Start" },
+      { property: "og:title", content: "Privacy Policy & Terms of Service · Clean Start" },
       {
         property: "og:description",
         content:
-          "Learn how Clean Start guides households through clean energy decisions — and how we handle your data.",
+          "How Clean Start collects, stores, and protects your data, and the terms that govern using the app.",
       },
     ],
   }),
-  component: AboutPage,
+  component: PrivacyPage,
 });
 
-function AboutPage() {
+const LAST_UPDATED = "July 9, 2026";
+
+function PrivacyPage() {
   return (
     <div className="mx-auto max-w-3xl px-4 py-12">
       {/* Intro */}
-      <header className="mb-12">
+      <header className="mb-10">
         <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-border bg-card px-3 py-1 text-xs text-muted-foreground">
-          <Leaf className="h-3.5 w-3.5 text-primary" />
-          About Clean Start
+          <FileText className="h-3.5 w-3.5 text-primary" />
+          Legal
         </div>
-        <h1 className="text-4xl font-semibold tracking-tight">
-          A calmer way to understand your clean energy options.
-        </h1>
+        <h1 className="text-4xl font-semibold tracking-tight">Privacy Policy & Terms of Service</h1>
         <p className="mt-4 text-lg text-muted-foreground">
-          Clean Start is a conversational guide that helps households — whether you rent, own, or
-          are just curious — learn about solar, heat pumps, EVs, weatherization, and incentives at
-          your own pace. We don't sell equipment, and we don't take commissions.
+          This page explains how Clean Start handles your data and the terms that govern your use of
+          the app. It's written in plain language on purpose — if anything is unclear, reach out and
+          we'll explain it further.
         </p>
+        <p className="mt-4 text-xs text-muted-foreground">Last updated: {LAST_UPDATED}</p>
+
+        <nav className="mt-6 flex gap-2 text-sm">
+          <a
+            href="#privacy-policy"
+            className="rounded-full border border-border bg-card px-3 py-1.5 hover:bg-accent"
+          >
+            Privacy Policy
+          </a>
+          <a
+            href="#terms-of-service"
+            className="rounded-full border border-border bg-card px-3 py-1.5 hover:bg-accent"
+          >
+            Terms of Service
+          </a>
+        </nav>
       </header>
 
-      {/* What we do */}
-      <section className="mb-12 grid gap-4 sm:grid-cols-3">
-        <Card icon={<BookOpen className="h-5 w-5 text-primary" />} title="Educational, not salesy">
-          Plain-language answers grounded in publicly available information. No upsells, no lead
-          generation.
-        </Card>
-        <Card icon={<Users className="h-5 w-5 text-primary" />} title="Built for your situation">
-          Guidance adapts to whether you're a renter, a homeowner, or simply exploring — so the next
-          step actually fits your life.
-        </Card>
-        <Card icon={<Shield className="h-5 w-5 text-primary" />} title="Vendor-neutral">
-          We don't represent any installer, utility, or manufacturer. Our only job is to help you
-          ask better questions.
-        </Card>
-      </section>
-
-      {/* Privacy */}
-      <section className="rounded-2xl border border-border bg-card p-6 sm:p-8">
+      {/* Privacy Policy */}
+      <section
+        id="privacy-policy"
+        className="scroll-mt-20 rounded-2xl border border-border bg-card p-6 sm:p-8"
+      >
         <div className="mb-2 inline-flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-primary">
           <Lock className="h-3.5 w-3.5" />
-          Privacy
+          Privacy Policy
         </div>
         <h2 className="text-2xl font-semibold tracking-tight">How we handle your data</h2>
         <p className="mt-2 text-sm text-muted-foreground">
-          This page is maintained by the Clean Start team to answer common privacy questions about
-          the app. It describes app-visible controls and current practices — it isn't a legal
-          certification or independent audit.
+          Clean Start does not sell your data, track you across the web, or recommend specific
+          vendors. This section describes what we collect, how it's used, and the controls you have
+          over it.
         </p>
 
         <div className="mt-8 space-y-6 text-sm">
           <PolicyItem icon={<Database className="h-4 w-4 text-primary" />} title="What we collect">
-            When you sign in, we store your account identifier and an optional persona (renter,
-            homeowner, curious). When you chat, we store your messages, the assistant's replies, and
-            any reports you generate so you can come back to them later. We don't ask for your
-            address, income, utility account, or other sensitive identifiers.
+            If you create an account, we store your email address and an optional persona (renter,
+            homeowner, or curious). When you chat, we store your messages, the assistant's replies,
+            and any reports you generate so you can return to them later. We don't ask for your
+            address, income, utility account number, or other sensitive identifiers.
+          </PolicyItem>
+
+          <PolicyItem icon={<Cookie className="h-4 w-4 text-primary" />} title="Guest mode">
+            You can use Clean Start without an account. Guest conversations are kept in your
+            browser's local storage on your device and are not linked to an identity or saved to our
+            servers. Clearing your browser data or switching devices will remove them.
           </PolicyItem>
 
           <PolicyItem icon={<Lock className="h-4 w-4 text-primary" />} title="Who can see it">
@@ -103,7 +110,8 @@ function AboutPage() {
           >
             Your messages are sent to a hosted AI provider through a server-side gateway to produce
             replies. The provider's API key is never exposed in your browser. We don't use your
-            conversations to train models, and we don't share them with third parties for marketing.
+            conversations to train models, and we don't share them with third parties for marketing
+            or advertising.
           </PolicyItem>
 
           <PolicyItem icon={<Trash2 className="h-4 w-4 text-primary" />} title="Deleting your data">
@@ -122,11 +130,22 @@ function AboutPage() {
             </a>
             .
           </PolicyItem>
+
+          <PolicyItem
+            icon={<RefreshCw className="h-4 w-4 text-primary" />}
+            title="Changes to this policy"
+          >
+            If we make material changes to how we handle your data, we'll update this page and
+            revise the "last updated" date above.
+          </PolicyItem>
         </div>
       </section>
 
       {/* Terms of Service */}
-      <section className="mt-10 rounded-2xl border border-border bg-card p-6 sm:p-8">
+      <section
+        id="terms-of-service"
+        className="mt-10 scroll-mt-20 rounded-2xl border border-border bg-card p-6 sm:p-8"
+      >
         <div className="mb-2 inline-flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-primary">
           <Scale className="h-3.5 w-3.5" />
           Terms of Service
@@ -207,24 +226,6 @@ function AboutPage() {
           Start a conversation
         </Link>
       </div>
-    </div>
-  );
-}
-
-function Card({
-  icon,
-  title,
-  children,
-}: {
-  icon: React.ReactNode;
-  title: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="rounded-xl border border-border bg-card p-5">
-      <div className="mb-2">{icon}</div>
-      <h3 className="font-medium">{title}</h3>
-      <p className="mt-1 text-sm text-muted-foreground">{children}</p>
     </div>
   );
 }
