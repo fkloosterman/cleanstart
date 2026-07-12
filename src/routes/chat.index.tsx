@@ -566,7 +566,14 @@ function ChatPage() {
                             .filter((m) => m.content.trim().length > 0);
                           window.sessionStorage.setItem(
                             "cleanstart.guest-report.v1",
-                            JSON.stringify({ tenure, location, messages: transcript }),
+                            JSON.stringify({
+                              tenure,
+                              location,
+                              // The composer's primary input (§9); read fresh so it
+                              // carries every patch accumulated this session.
+                              profile: readGuestProfile(),
+                              messages: transcript,
+                            }),
                           );
                         } catch {
                           // ignore
