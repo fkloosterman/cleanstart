@@ -20,7 +20,9 @@
  */
 
 import { useState } from "react";
+import { Link } from "@tanstack/react-router";
 import {
+  ArrowLeft,
   BookOpen,
   CheckCircle2,
   ChevronDown,
@@ -33,7 +35,9 @@ import {
 } from "lucide-react";
 import { MessageResponse } from "@/components/ai-elements/message";
 import { ProfileSidebarContent } from "@/components/ProfileSidebar";
+import { ReportDownloadMenu } from "@/components/report/ReportDownloadMenu";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import {
   documentSections,
@@ -295,6 +299,16 @@ export function ReportDocumentView({
 
   return (
     <div className="mx-auto max-w-3xl px-4 py-10">
+      <div className="mb-6 flex items-center justify-between gap-2">
+        <Button variant="ghost" size="sm" asChild>
+          <Link to="/chat">
+            <ArrowLeft className="mr-1 h-4 w-4" /> Back
+          </Link>
+        </Button>
+        {/* Exports are frozen projections of this document, not the page (§7.2). */}
+        <ReportDownloadMenu document={doc} />
+      </div>
+
       <header className="mb-8 rounded-2xl border border-border bg-gradient-to-br from-primary-light/60 to-card p-6">
         <div className="flex items-center gap-2">
           <Leaf className="h-5 w-5 text-primary-dark" />
