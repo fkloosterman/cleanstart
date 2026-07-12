@@ -22,7 +22,7 @@ import {
   selectCandidates,
   DEFAULT_CANDIDATE_LIMIT,
 } from "@/lib/content/candidates";
-import type { ContentComponent, ContentSource } from "@/lib/content/schema";
+import type { ContentComponent, ContentMedia, ContentSource } from "@/lib/content/schema";
 import { deriveLane } from "@/lib/lanes/derive";
 import { slotValue } from "@/lib/profile/normalize";
 import type { SessionProfile } from "@/lib/profile/registry";
@@ -61,6 +61,9 @@ export function createCompositionGenerate(apiKey: string): ComposeGenerate {
 const COMPONENT_COLUMNS =
   "slug, kind, title, summary, body_md, technologies, lanes, tenures, housing_types, regions, prerequisites, effort, impact, sources, last_verified, expires, status, version, media";
 const SOURCE_COLUMNS = "slug, label, url, publisher, last_verified";
+// Media columns feed the frozen figures in the document's background section
+// (§7.1); the renderer resolves storage_path → a public URL at render time.
+const MEDIA_COLUMNS = "slug, kind, storage_path, alt, caption, credit, technologies, regions";
 
 /**
  * Load the published content library for composition. Forgiving like every
@@ -71,19 +74,22 @@ const SOURCE_COLUMNS = "slug, label, url, publisher, last_verified";
 export async function loadCompositionLibrary(): Promise<AssemblyLibrary> {
   try {
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const [componentsRes, sourcesRes] = await Promise.all([
+    const [componentsRes, sourcesRes, mediaRes] = await Promise.all([
       supabaseAdmin.from("content_components").select(COMPONENT_COLUMNS).eq("status", "published"),
       supabaseAdmin.from("content_sources").select(SOURCE_COLUMNS),
+      supabaseAdmin.from("content_media").select(MEDIA_COLUMNS),
     ]);
-    if (componentsRes.error || !componentsRes.data) return { components: [], sources: [] };
+    if (componentsRes.error || !componentsRes.data)
+      return { components: [], sources: [], media: [] };
     return {
       // The tables are a projection of already-validated content (WP3.1/3.2); cast
       // at this trust boundary. A malformed row simply fails to match filters.
       components: componentsRes.data as unknown as ContentComponent[],
       sources: (sourcesRes.data ?? []) as unknown as ContentSource[],
+      media: (mediaRes.data ?? []) as unknown as ContentMedia[],
     };
   } catch {
-    return { components: [], sources: [] };
+    return { components: [], sources: [], media: [] };
   }
 }
 

@@ -21,10 +21,12 @@
  * - Authored (D20 hybrid) items carry their "not yet from our reviewed
  *   library" label into the export too.
  *
- * Tier A carries no figures in the document (WP3.8 is deferred), so the
- * minimal export ships without them per D18 — there is simply nothing to
- * rasterise. The block model is pure and unit-tested; the binary formats
- * (PDF via jsPDF, docx) are thin walkers over these blocks at the UI edge.
+ * Figures: the document's background entries may carry curated figures, but
+ * D18 defers export rasterisation — so rather than embed images, the export
+ * carries each figure's alt text as a muted "see web version" line, keeping the
+ * information without the binary. The block model is pure and unit-tested; the
+ * binary formats (PDF via jsPDF, docx) are thin walkers over these blocks at the
+ * UI edge.
  */
 
 import { buildSidebarModel, type SidebarValue } from "@/lib/profile/sidebar";
@@ -146,6 +148,11 @@ function projectBackground(doc: ReportDocument, emphasis: string): ExportBlock[]
     blocks.push({ kind: "h3", text: entry.title });
     if (entry.origin === "authored") blocks.push({ kind: "muted", text: AUTHORED_LABEL });
     blocks.push({ kind: "p", text: entry.body_md, markdown: true });
+    // D18 defers figure rasterisation: rather than drop a curated diagram from
+    // the printed copy, carry its description as text so the information isn't lost.
+    for (const figure of entry.figures) {
+      blocks.push({ kind: "muted", text: `Figure (see web version): ${figure.alt}` });
+    }
   }
   return blocks;
 }

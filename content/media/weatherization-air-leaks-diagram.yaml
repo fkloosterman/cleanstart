@@ -1,0 +1,13 @@
+slug: weatherization-air-leaks-diagram
+kind: diagram
+storage_path: media/weatherization-air-leaks-diagram.svg
+alt: Cross-section of a house showing common air-leak paths at the attic, windows, doors, and rim joist
+caption: Most homes leak conditioned air at the attic, windows, doors, and rim joist.
+credit:
+  source: CleanStart original
+  license: CC-BY-4.0
+technologies:
+  - air-sealing
+  - weatherization
+regions:
+  - US

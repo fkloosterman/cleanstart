@@ -20,6 +20,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/integrations/supabase/types";
 import type { ValidatedContent } from "@/lib/content/validate";
+import type { ContentMedia } from "@/lib/content/schema";
 
 type Tables = Database["public"]["Tables"];
 type Json = Database["public"]["Tables"]["content_components"]["Row"]["impact"];
@@ -138,4 +139,74 @@ export async function syncContent(
     components: await upsert("components"),
     presets: await upsert("presets"),
   };
+}
+
+// ---------------------------------------------------------------------------
+// Media binary upload (design §3.2 — the Supabase Storage side of sync)
+//
+// `syncContent` writes the media *metadata* rows (alt, credit, storage_path);
+// the actual image bytes live in the `content-media` Storage bucket at each
+// record's `storage_path`. Deploy must push both, or `[figure:<slug>]` (chat)
+// and report figures resolve to a 404. Kept here, pure-ish and injectable
+// (`readAsset` supplied by the caller), so it unit-tests without touching disk.
+
+/** The world-readable Storage bucket curated media lives in (world-readable RLS). */
+export const MEDIA_BUCKET = "content-media";
+
+/** Content-type for a stored asset, by extension — Storage needs it explicitly. */
+export function mediaContentType(storagePath: string): string {
+  const ext = storagePath.slice(storagePath.lastIndexOf(".") + 1).toLowerCase();
+  switch (ext) {
+    case "svg":
+      return "image/svg+xml";
+    case "png":
+      return "image/png";
+    case "jpg":
+    case "jpeg":
+      return "image/jpeg";
+    case "webp":
+      return "image/webp";
+    case "gif":
+      return "image/gif";
+    default:
+      return "application/octet-stream";
+  }
+}
+
+export interface MediaUploadResult {
+  uploaded: number;
+  /** storage_paths whose local asset was missing (never fatal — reported). */
+  missing: string[];
+  /** Per-asset upload errors (never fatal — reported). */
+  errors: string[];
+}
+
+/**
+ * Upload each media record's binary to the `content-media` bucket at its
+ * `storage_path` (idempotent — `upsert: true`, so re-running is safe). Best
+ * effort by design, mirroring `syncContent`'s caller: a missing local file or a
+ * failed upload is *reported*, never thrown, so a media gap can't wedge a
+ * deploy. `readAsset` returns the bytes for a `storage_path`, or null if the
+ * file isn't present — injected so the caller owns disk access (and tests a fake).
+ */
+export async function uploadMediaAssets(
+  client: SupabaseClient<Database>,
+  media: ContentMedia[],
+  readAsset: (storagePath: string) => Uint8Array | null,
+): Promise<MediaUploadResult> {
+  const result: MediaUploadResult = { uploaded: 0, missing: [], errors: [] };
+  for (const m of bySlug(media)) {
+    const bytes = readAsset(m.storage_path);
+    if (bytes === null) {
+      result.missing.push(m.storage_path);
+      continue;
+    }
+    const { error } = await client.storage.from(MEDIA_BUCKET).upload(m.storage_path, bytes, {
+      contentType: mediaContentType(m.storage_path),
+      upsert: true,
+    });
+    if (error) result.errors.push(`${m.storage_path}: ${error.message}`);
+    else result.uploaded += 1;
+  }
+  return result;
 }

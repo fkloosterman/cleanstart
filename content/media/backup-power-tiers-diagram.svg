@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 360" role="img"
+     aria-label="Three tiers of outage backup: a portable power station, a home battery, and solar paired with a battery, increasing in capacity">
+  <rect x="0" y="0" width="640" height="360" rx="16" fill="#f8fafc"/>
+  <style>
+    .lbl{font:600 15px system-ui,sans-serif;fill:#0f172a}
+    .sub{font:12px system-ui,sans-serif;fill:#475569}
+    .cap{font:700 13px system-ui,sans-serif;fill:#0369a1}
+    .tier{font:800 13px system-ui,sans-serif;fill:#065f46}
+  </style>
+
+  <text x="320" y="40" text-anchor="middle" class="lbl">Match backup to what you need to keep running</text>
+
+  <!-- Tier 1 -->
+  <rect x="40" y="120" width="160" height="150" rx="12" fill="#ecfdf5" stroke="#6ee7b7"/>
+  <rect x="95" y="165" width="50" height="60" rx="6" fill="#fff" stroke="#10b981"/>
+  <text x="120" y="150" text-anchor="middle" class="tier">1 · Portable</text>
+  <text x="120" y="250" text-anchor="middle" class="sub">phones, router,</text>
+  <text x="120" y="266" text-anchor="middle" class="sub">a small appliance</text>
+
+  <!-- Tier 2 -->
+  <rect x="240" y="100" width="160" height="170" rx="12" fill="#d1fae5" stroke="#34d399"/>
+  <rect x="290" y="150" width="60" height="80" rx="6" fill="#fff" stroke="#059669"/>
+  <text x="320" y="130" text-anchor="middle" class="tier">2 · Home battery</text>
+  <text x="320" y="250" text-anchor="middle" class="sub">essential circuits</text>
+  <text x="320" y="266" text-anchor="middle" class="sub">through a longer outage</text>
+
+  <!-- Tier 3 -->
+  <rect x="440" y="80" width="160" height="190" rx="12" fill="#a7f3d0" stroke="#10b981"/>
+  <g fill="#1e3a8a" stroke="#1e40af"><rect x="470" y="120" width="46" height="22" rx="2"/><rect x="524" y="120" width="46" height="22" rx="2"/></g>
+  <rect x="495" y="160" width="60" height="70" rx="6" fill="#fff" stroke="#047857"/>
+  <text x="520" y="110" text-anchor="middle" class="tier">3 · Solar + battery</text>
+  <text x="520" y="250" text-anchor="middle" class="sub">recharges by day,</text>
+  <text x="520" y="266" text-anchor="middle" class="sub">carries multi-day outages</text>
+
+  <text x="320" y="325" text-anchor="middle" class="cap">Deciding what must stay on — and for how long — prevents overspending.</text>
+</svg>

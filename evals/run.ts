@@ -230,7 +230,7 @@ async function runComposer(fixture: ComposerFixture, apiKey: string): Promise<st
   const doc = assembleReportDocument(
     composition,
     input,
-    { components: fixture.components, sources: fixture.sources ?? [] },
+    { components: fixture.components, sources: fixture.sources ?? [], media: fixture.media ?? [] },
     new Date().toISOString(),
   );
 

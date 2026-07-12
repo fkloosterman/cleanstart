@@ -89,6 +89,15 @@ const lowerBills: ReportDocument = {
         "Before any new equipment, **air sealing and insulation** make every other upgrade smaller and cheaper. A drafty house makes even an efficient furnace work overtime.\n\n- Sealing gaps around windows, doors, and the attic hatch is often a weekend's work.\n- Adding attic insulation to modern levels is the single highest-return efficiency job in most older homes.",
       origin: "library",
       sources: ["doe-energy-saver"],
+      figures: [
+        {
+          slug: "weatherization-air-leaks-diagram",
+          storage_path: "media/weatherization-air-leaks-diagram.svg",
+          alt: "Cross-section of a house showing common air-leak paths at the attic, windows, doors, and rim joist",
+          caption: "Most homes leak conditioned air at the attic, windows, doors, and rim joist.",
+          credit: { source: "CleanStart original", license: "CC-BY-4.0" },
+        },
+      ],
     },
   ],
   action_plan: [
@@ -211,6 +220,7 @@ const learning: ReportDocument = {
         "Solar panels make **direct current** from sunlight; an *inverter* converts it to the alternating current your home uses. Anything you don't use flows back to the grid.\n\nThe key idea is **net metering**: when your panels overproduce, your meter effectively runs backward, banking credit you draw on at night.",
       origin: "library",
       sources: ["nrel-solar-basics"],
+      figures: [],
     },
     {
       component_slug: "community-solar-explained",
@@ -219,6 +229,7 @@ const learning: ReportDocument = {
         'You don\'t need to own a roof to benefit. **Community solar** lets you subscribe to a share of a nearby solar farm and get credits on your utility bill for its output.\n\nFor renters, this is usually the only way to "go solar" — no installation, and you can typically cancel when you move.',
       origin: "library",
       sources: ["doe-community-solar"],
+      figures: [],
     },
     {
       component_slug: null,
@@ -227,6 +238,7 @@ const learning: ReportDocument = {
         "Some landlords will consider panels if a tenant covers or shares the cost, especially on a long lease. It's rare, but worth one conversation before ruling it out.",
       origin: "authored",
       sources: [],
+      figures: [],
     },
   ],
   action_plan: [],
@@ -308,6 +320,7 @@ const mixed: ReportDocument = {
         "You don't have to do everything at once. Replacing whatever breaks next with its efficient electric version — furnace to heat pump, water heater to heat-pump water heater — captures most of the savings and carbon cuts without a big single bill.",
       origin: "library",
       sources: ["rewiring-america"],
+      figures: [],
     },
   ],
   action_plan: [

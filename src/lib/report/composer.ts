@@ -34,7 +34,7 @@
  */
 
 import { z } from "zod";
-import type { ContentComponent, ContentSource } from "@/lib/content/schema";
+import type { ContentComponent, ContentMedia, ContentSource } from "@/lib/content/schema";
 import type { ScoredCandidate, CandidateContext } from "@/lib/content/candidates";
 import { laneReadinessRequirements, type LaneDerivation } from "@/lib/lanes/derive";
 import { LANE_PLAYBOOKS, type FramingId } from "@/lib/lanes/playbooks";
@@ -46,6 +46,7 @@ import {
   type ActionItem,
   type BackgroundEntry,
   type ContentOrigin,
+  type DocumentFigure,
   type ReportDocument,
   type SourceCitation,
 } from "@/lib/report/document";
@@ -524,10 +525,26 @@ export function deterministicFallback(input: ComposerInput): ValidatedCompositio
 // ---------------------------------------------------------------------------
 // Document assembly (design §7.1) — deterministic sections + validated selection
 
-/** The library records assembly needs (full components with body_md, and sources). */
+/** The library records assembly needs (full components with body_md, sources, media). */
 export interface AssemblyLibrary {
   components: ContentComponent[];
   sources: ContentSource[];
+  /** Curated media, resolved from each explainer's `media` slugs into frozen figures. */
+  media: ContentMedia[];
+}
+
+/** Resolve a component's media slugs to frozen figures, dropping any unknown slug. */
+function resolveFigures(slugs: string[], mediaBySlug: Map<string, ContentMedia>): DocumentFigure[] {
+  return slugs
+    .map((slug) => mediaBySlug.get(slug))
+    .filter((m): m is ContentMedia => m !== undefined)
+    .map((m) => ({
+      slug: m.slug,
+      storage_path: m.storage_path,
+      alt: m.alt,
+      caption: m.caption,
+      credit: { source: m.credit.source, license: m.credit.license },
+    }));
 }
 
 function backgroundEmphasis(framing: FramingId): "full" | "standard" | "collapsed" {
@@ -553,6 +570,7 @@ export function assembleReportDocument(
 ): ReportDocument {
   const componentBySlug = new Map(library.components.map((c) => [c.slug, c]));
   const sourceBySlug = new Map(library.sources.map((s) => [s.slug, s]));
+  const mediaBySlug = new Map(library.media.map((m) => [m.slug, m]));
   const framing = input.derivation.framing;
 
   // Track cited source slugs (from every rendered item + background) so the
@@ -604,6 +622,7 @@ export function assembleReportDocument(
       body_md: component.body_md,
       origin: "library",
       sources: component.sources,
+      figures: resolveFigures(component.media, mediaBySlug),
     });
     noteSources(component.sources);
   }

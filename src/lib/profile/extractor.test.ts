@@ -21,7 +21,7 @@ describe("buildExtractionSystem — registry-derived (§4.2)", () => {
 
   it("surfaces enum options for a weak model", () => {
     expect(system).toContain("owner, renter, other"); // tenure options
-    expect(system).toContain("single-family, apartment, condo, mobile");
+    expect(system).toContain("single-family, townhouse, apartment, condo, mobile");
   });
 
   it("states the hard rules (never ruled_out from silence, never edited/propagated)", () => {
