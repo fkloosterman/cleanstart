@@ -1,4 +1,4 @@
-import type { ContentComponent, ContentSource } from "@/lib/content/schema";
+import type { ContentComponent, ContentMedia, ContentSource } from "@/lib/content/schema";
 import type { LaneId } from "@/lib/lanes/playbooks";
 import type { ModelPurpose } from "@/lib/model-map";
 import type { Preference, SessionProfile, SlotName } from "@/lib/profile/registry";
@@ -93,6 +93,8 @@ export interface ComposerFixture {
   profile: SessionProfile;
   components: ContentComponent[];
   sources?: ContentSource[];
+  /** Optional curated media, resolved into the document's background figures (§3.2). */
+  media?: ContentMedia[];
   /** Optional conversation highlights fed to the composer digest. */
   digest?: string;
   expect: ComposerExpectation[];

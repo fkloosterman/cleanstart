@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { buildSyncRows, syncContent } from "@/lib/content/sync";
+import {
+  buildSyncRows,
+  mediaContentType,
+  syncContent,
+  uploadMediaAssets,
+  MEDIA_BUCKET,
+} from "@/lib/content/sync";
 import type { ValidatedContent } from "@/lib/content/validate";
+import type { ContentMedia } from "@/lib/content/schema";
 
 const content: ValidatedContent = {
   sources: [
@@ -160,5 +167,92 @@ describe("syncContent", () => {
     const counts = await syncContent(client as any, empty);
     expect(counts).toEqual({ sources: 0, media: 0, components: 0, presets: 0 });
     expect(calls).toHaveLength(0);
+  });
+});
+
+describe("mediaContentType", () => {
+  it("maps known image extensions and falls back to octet-stream", () => {
+    expect(mediaContentType("media/x.svg")).toBe("image/svg+xml");
+    expect(mediaContentType("media/x.PNG")).toBe("image/png"); // case-insensitive
+    expect(mediaContentType("media/x.jpg")).toBe("image/jpeg");
+    expect(mediaContentType("media/x.jpeg")).toBe("image/jpeg");
+    expect(mediaContentType("media/x.webp")).toBe("image/webp");
+    expect(mediaContentType("media/x.bin")).toBe("application/octet-stream");
+  });
+});
+
+describe("uploadMediaAssets", () => {
+  const media: ContentMedia[] = [
+    {
+      slug: "b",
+      kind: "diagram",
+      storage_path: "media/b.svg",
+      alt: "b",
+      caption: "",
+      credit: { source: "N", license: "CC0" },
+      technologies: [],
+      regions: [],
+    },
+    {
+      slug: "a",
+      kind: "photo",
+      storage_path: "media/a.png",
+      alt: "a",
+      caption: "",
+      credit: { source: "N", license: "CC0" },
+      technologies: [],
+      regions: [],
+    },
+  ];
+
+  function fakeStorage(failOn?: string) {
+    const calls: { bucket: string; path: string; contentType?: string; upsert?: boolean }[] = [];
+    const client = {
+      storage: {
+        from(bucket: string) {
+          return {
+            upload(
+              path: string,
+              _bytes: Uint8Array,
+              opts: { contentType?: string; upsert?: boolean },
+            ) {
+              calls.push({ bucket, path, contentType: opts.contentType, upsert: opts.upsert });
+              return Promise.resolve({ error: failOn === path ? { message: "no bucket" } : null });
+            },
+          };
+        },
+      },
+    };
+    return { client, calls };
+  }
+
+  it("uploads every asset by slug order, to the bucket, with content-type and upsert", async () => {
+    const { client, calls } = fakeStorage();
+    const read = () => new Uint8Array([1, 2, 3]);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const result = await uploadMediaAssets(client as any, media, read);
+    expect(result).toEqual({ uploaded: 2, missing: [], errors: [] });
+    expect(calls.map((c) => c.path)).toEqual(["media/a.png", "media/b.svg"]); // sorted by slug
+    expect(calls.every((c) => c.bucket === MEDIA_BUCKET && c.upsert === true)).toBe(true);
+    expect(calls.find((c) => c.path === "media/a.png")?.contentType).toBe("image/png");
+  });
+
+  it("reports a missing local asset instead of uploading it", async () => {
+    const { client, calls } = fakeStorage();
+    const read = (p: string) => (p === "media/a.png" ? null : new Uint8Array([1]));
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const result = await uploadMediaAssets(client as any, media, read);
+    expect(result.uploaded).toBe(1);
+    expect(result.missing).toEqual(["media/a.png"]);
+    expect(calls.map((c) => c.path)).toEqual(["media/b.svg"]);
+  });
+
+  it("collects per-asset upload errors without throwing", async () => {
+    const { client } = fakeStorage("media/b.svg");
+    const read = () => new Uint8Array([1]);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const result = await uploadMediaAssets(client as any, media, read);
+    expect(result.uploaded).toBe(1);
+    expect(result.errors).toEqual(["media/b.svg: no bucket"]);
   });
 });

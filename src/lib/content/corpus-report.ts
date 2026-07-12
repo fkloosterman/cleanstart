@@ -33,12 +33,17 @@
  * (the expected state of a seed corpus) reads as "nothing reviewed yet", not as
  * a bug.
  *
- * Design note — why the grid is tenure × region × lane and *not* also ×
- * technology-interest: interests only *boost* score and (when ruled out)
- * suppress; they never change which components are eligible, so multiplying the
- * grid by every interest would 14× the cells without moving a single pool size.
- * Interest depth is instead measured directly (per-technology coverage) and
- * through the preset seeds, which carry realistic interest combinations.
+ * Design note — the grid axes are exactly the *hard filters* that change which
+ * components are eligible: tenure × region × housing. Lane and technology
+ * interest are deliberately NOT grid axes — they only *order* and *boost/suppress*
+ * score, never eligibility, so multiplying the grid by them would inflate the
+ * cell count without moving a single pool size (a lane-multiplied grid printed 5
+ * identical rows per tenure/region). Housing earns its axis because a house-only
+ * action (attic insulation, rooftop solar) is genuinely ineligible for an
+ * apartment — so an apartment cell must show that thinner pool. `null` housing
+ * models "not yet stated": the conservative floor a report sees before the user
+ * reveals their home type. Lane depth is measured directly (lane coverage), and
+ * interest depth through per-technology coverage and the preset seeds.
  */
 
 import { buildCandidateContext, filterEligible, IMPACT_DIMENSIONS } from "@/lib/content/candidates";
@@ -50,8 +55,8 @@ import {
 } from "@/lib/content/schema";
 import { emptyProfile } from "@/lib/profile/normalize";
 import { applyPatches, type ProfilePatch } from "@/lib/profile/patches";
-import { DIMENSION_BY_LANE, LANE_IDS, LANE_PLAYBOOKS, type LaneId } from "@/lib/lanes/playbooks";
-import type { SessionProfile } from "@/lib/profile/registry";
+import { DIMENSION_BY_LANE, LANE_IDS, type LaneId } from "@/lib/lanes/playbooks";
+import { HOUSING_TYPES, type SessionProfile } from "@/lib/profile/registry";
 
 // ---------------------------------------------------------------------------
 // Configuration — placeholder-quality tuning knobs (like WP3.3's scoring
@@ -66,6 +71,13 @@ export interface CorpusReportConfig {
    * DMV state.
    */
   regions: string[];
+  /**
+   * Housing types for the grid — the second hard-filter axis. `null` models
+   * "housing not yet stated" (the conservative floor: only housing-agnostic
+   * content is eligible). The concrete types reveal where house-only content
+   * leaves apartment/condo/mobile pools thin.
+   */
+  housingTypes: (string | null)[];
   /**
    * The action-plan size the authored-share projection assumes a report wants.
    * If the eligible pool is smaller, the composer must author the remainder.
@@ -86,8 +98,21 @@ export interface CorpusReportConfig {
 /** DMV pilot + national — the D9 launch region scope. */
 export const LAUNCH_REGIONS = ["US", "US-DC", "US-MD", "US-VA"] as const;
 
+/**
+ * The housing axis for the grid: `null` ("not yet stated") plus the housing
+ * types a *profile* can actually hold (`HOUSING_TYPES` from the profile
+ * registry). `null` reproduces the pre-housing behavior (the conservative
+ * floor); the concrete types surface where house-only content thins out for
+ * flats. Deliberately the profile enum, NOT content/vocabulary.yaml — the grid
+ * models real user profiles, and a content file may target a housing tag (e.g.
+ * `townhouse`) that no profile can represent, which the coverage of that tag
+ * would silently overstate.
+ */
+export const GRID_HOUSING = [null, ...HOUSING_TYPES] as const;
+
 export const DEFAULT_CORPUS_CONFIG: Omit<CorpusReportConfig, "today"> = {
   regions: [...LAUNCH_REGIONS],
+  housingTypes: [...GRID_HOUSING],
   targetReportItems: 5, // PLACEHOLDER (D9/WP3.6): a typical action-plan length
   authoredShareCap: 0.4, // PLACEHOLDER (D9/WP3.6): "≤ the D9 cap" (plan §WP3.6)
   thinPoolThreshold: 3,
@@ -110,13 +135,14 @@ function zeroKindMix(): KindMix {
 }
 
 export interface CellReport {
-  /** Human-readable cell id, e.g. "owner · US-VA · lower_bills" or "preset:community-solar". */
+  /** Human-readable cell id, e.g. "owner · US-VA · single-family" or "preset:community-solar". */
   label: string;
   /** "grid" cells span the launch scope and drive the gate; "preset" cells are supplementary seeds. */
   source: "grid" | "preset";
   tenure: "owner" | "renter" | null;
   region: string;
-  lane: LaneId | null;
+  /** The grid housing type, `null` for "not yet stated" (and for preset cells). */
+  housing: string | null;
   /** Eligible pool size after the real hard filters + prerequisite holdback. */
   poolSize: number;
   kindMix: KindMix;
@@ -207,24 +233,27 @@ function regionState(region: string): string | null {
 }
 
 /**
- * A synthetic profile for one (tenure, region, lane): tenure and region set as
- * `stated`, motivation seeded from the lane's default weight vector so
- * `deriveLane` lands on that lane. Built through `applyPatches` so it is
- * exactly the shape the production pipeline consumes.
+ * A synthetic profile for one (tenure, region, housing): each hard-filter axis
+ * set as `stated`. Motivation is deliberately left unset — it drives lane and
+ * scoring, neither of which affects *eligibility* (the only thing this grid
+ * measures), so seeding it would add nothing. `housing === null` leaves the slot
+ * empty, reproducing the pre-housing "not yet stated" behavior. Built through
+ * `applyPatches` so it is exactly the shape the production pipeline consumes.
  */
-function gridProfile(tenure: "owner" | "renter", region: string, lane: LaneId): SessionProfile {
+function gridProfile(
+  tenure: "owner" | "renter",
+  region: string,
+  housing: string | null,
+): SessionProfile {
   const state = regionState(region);
   const patches: ProfilePatch[] = [
     { op: "set", slot: "tenure", value: tenure, provenance: "stated" },
-    {
-      op: "set",
-      slot: "motivation_weights",
-      value: LANE_PLAYBOOKS[lane].impact_weights,
-      provenance: "stated",
-    },
   ];
   if (state) {
     patches.push({ op: "set", slot: "region", value: { state }, provenance: "stated" });
+  }
+  if (housing) {
+    patches.push({ op: "set", slot: "housing_type", value: housing, provenance: "stated" });
   }
   return applyPatches(emptyProfile(), patches).profile;
 }
@@ -241,7 +270,7 @@ function evaluateCell(
   components: ContentComponent[],
   profile: SessionProfile,
   config: CorpusReportConfig,
-  base: Pick<CellReport, "label" | "source" | "tenure" | "region" | "lane">,
+  base: Pick<CellReport, "label" | "source" | "tenure" | "region" | "housing">,
 ): CellReport {
   const ctx = buildCandidateContext(profile);
   const eligible = filterEligible(components, ctx);
@@ -272,14 +301,14 @@ function buildCells(
 
   for (const tenure of ["owner", "renter"] as const) {
     for (const region of config.regions) {
-      for (const lane of LANE_IDS) {
+      for (const housing of config.housingTypes) {
         cells.push(
-          evaluateCell(components, gridProfile(tenure, region, lane), config, {
-            label: `${tenure} · ${region} · ${lane}`,
+          evaluateCell(components, gridProfile(tenure, region, housing), config, {
+            label: `${tenure} · ${region} · ${housing ?? "any"}`,
             source: "grid",
             tenure,
             region,
-            lane,
+            housing,
           }),
         );
       }
@@ -293,7 +322,7 @@ function buildCells(
         source: "preset",
         tenure: null,
         region: "(preset)",
-        lane: null,
+        housing: null,
       }),
     );
   }
@@ -540,7 +569,7 @@ export function formatCorpusReport(report: CorpusReport): string {
     `Components: ${inventory.publishedComponents} published` +
       (statusBits ? ` (all: ${statusBits})` : ""),
     `Media: ${inventory.media}   Presets: ${inventory.presets}`,
-    `Grid: tenure × ${config.regions.length} region(s) × ${LANE_IDS.length} lanes` +
+    `Grid: tenure × ${config.regions.length} region(s) × ${config.housingTypes.length} housing type(s)` +
       `, target report size ${config.targetReportItems}`,
   );
 

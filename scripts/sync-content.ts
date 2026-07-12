@@ -17,9 +17,10 @@
  *   - success                    → print per-table counts, exit 0
  */
 
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { validateContent } from "@/lib/content/validate";
-import { syncContent } from "@/lib/content/sync";
+import { syncContent, uploadMediaAssets } from "@/lib/content/sync";
 
 /**
  * A non-fatal skip must never be a silent one: print a delimited banner with
@@ -71,6 +72,34 @@ try {
     `✓ content synced — ${counts.components} components, ${counts.media} media, ` +
       `${counts.presets} presets, ${counts.sources} sources`,
   );
+
+  // Push the media binaries to Storage (the metadata rows alone resolve to 404s
+  // without them). Best-effort: a missing asset or a bucket that isn't set up is
+  // reported, never fatal — a media gap must not fail an otherwise-good deploy.
+  const readAsset = (storagePath: string): Uint8Array | null => {
+    try {
+      return new Uint8Array(readFileSync(join(CONTENT_DIR, storagePath)));
+    } catch {
+      return null;
+    }
+  };
+  const upload = await uploadMediaAssets(supabaseAdmin, content.media, readAsset);
+  console.log(`✓ media assets — ${upload.uploaded} uploaded to the content-media bucket`);
+  if (upload.missing.length > 0) {
+    warnBanner(`${upload.missing.length} media record(s) have no local asset file to upload.`, [
+      `Add the binary next to its .yaml under content/media/ (path from storage_path):`,
+      ...upload.missing.map((p) => `content/${p}`),
+    ]);
+  }
+  if (upload.errors.length > 0) {
+    warnBanner(
+      `${upload.errors.length} media asset(s) failed to upload to the content-media bucket.`,
+      [
+        `Confirm the world-readable "content-media" Storage bucket exists (WP3.2).`,
+        ...upload.errors,
+      ],
+    );
+  }
 } catch (err) {
   // Non-fatal by design: the content is valid, but the DB couldn't be written
   // (migration not applied yet, transient outage, bad key). Deploy anyway —

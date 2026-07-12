@@ -113,6 +113,22 @@ export type YourGoals = z.infer<typeof yourGoalsSchema>;
 // collapses to a couple of entries (the playbook's `report_sections`
 // emphasis, applied by the renderer).
 
+/**
+ * A library figure frozen into the document (§3.2, §7.1). Self-contained like
+ * `sources`: it carries the media record's fields so a frozen report renders
+ * without a live library lookup. `storage_path` is the bucket-relative path; the
+ * renderer resolves it to a public URL at render time (deterministic public
+ * URL), so the document stays free of environment-specific URLs.
+ */
+export const documentFigureSchema = z.object({
+  slug: z.string(),
+  storage_path: z.string(),
+  alt: z.string(),
+  caption: z.string().default(""),
+  credit: z.object({ source: z.string(), license: z.string() }),
+});
+export type DocumentFigure = z.infer<typeof documentFigureSchema>;
+
 export const backgroundEntrySchema = z.object({
   /** Library component slug, or null for an authored explainer (D20). */
   component_slug: z.string().nullable(),
@@ -122,6 +138,8 @@ export const backgroundEntrySchema = z.object({
   origin: contentOriginSchema,
   /** Source slugs this entry draws on — union feeds the `sources` section. */
   sources: z.array(z.string()).default([]),
+  /** Curated figures for this explainer, frozen for offline render (§3.2). */
+  figures: z.array(documentFigureSchema).default([]),
 });
 export type BackgroundEntry = z.infer<typeof backgroundEntrySchema>;
 

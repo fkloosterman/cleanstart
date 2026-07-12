@@ -1,0 +1,12 @@
+slug: solar-net-metering-diagram
+kind: diagram
+storage_path: media/solar-net-metering-diagram.svg
+alt: Rooftop solar panels power the home first, and surplus electricity flows through the meter to the grid as bill credits
+caption: Your home uses solar first; the surplus earns a net-metering credit.
+credit:
+  source: CleanStart original
+  license: CC-BY-4.0
+technologies:
+  - solar
+regions:
+  - US

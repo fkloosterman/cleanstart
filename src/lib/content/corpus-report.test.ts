@@ -2,11 +2,13 @@ import { describe, expect, it } from "vitest";
 import {
   buildCorpusReport,
   formatCorpusReport,
+  GRID_HOUSING,
   LAUNCH_REGIONS,
   type CorpusInput,
 } from "@/lib/content/corpus-report";
 import type { ContentComponent, ContentMedia, ContentPreset } from "@/lib/content/schema";
-import { LANE_IDS } from "@/lib/lanes/playbooks";
+
+const GRID_CELLS = 2 * LAUNCH_REGIONS.length * GRID_HOUSING.length;
 
 // --- fixtures ---------------------------------------------------------------
 
@@ -47,7 +49,7 @@ function report(content: Partial<CorpusInput>, overrides = {}) {
 // --- grid shape -------------------------------------------------------------
 
 describe("grid", () => {
-  it("spans tenure × launch regions × lanes, plus one cell per preset", () => {
+  it("spans tenure × launch regions × housing types, plus one cell per preset", () => {
     const presets: ContentPreset[] = [
       {
         slug: "p1",
@@ -62,9 +64,21 @@ describe("grid", () => {
     const r = report({ components: [comp()], presets });
     const gridCells = r.cells.filter((c) => c.source === "grid");
     const presetCells = r.cells.filter((c) => c.source === "preset");
-    expect(gridCells).toHaveLength(2 * LAUNCH_REGIONS.length * LANE_IDS.length);
+    expect(gridCells).toHaveLength(GRID_CELLS);
     expect(presetCells).toHaveLength(1);
     expect(presetCells[0].label).toBe("preset:p1");
+  });
+
+  it("makes housing a hard-filter axis: house-only content skips flats and the unstated floor", () => {
+    // A single-family-only component is eligible for single-family cells, but not
+    // for apartment/condo or the `null` ("not yet stated") floor.
+    const r = report({ components: [comp({ housing_types: ["single-family"] })] });
+    const sf = r.cells.find((c) => c.label === "owner · US · single-family");
+    const apt = r.cells.find((c) => c.label === "owner · US · apartment");
+    const any = r.cells.find((c) => c.label === "owner · US · any");
+    expect(sf?.poolSize).toBe(1);
+    expect(apt?.poolSize).toBe(0);
+    expect(any?.poolSize).toBe(0); // housing unknown → house-only content held back
   });
 
   it("sorts cells worst (smallest pool) first", () => {
@@ -81,9 +95,9 @@ describe("grid", () => {
 describe("pool size", () => {
   it("counts only components eligible for the cell (tenure + region prefix)", () => {
     const r = report({ components: [comp({ tenures: ["owner"], regions: ["US-VA"] })] });
-    const ownerVa = r.cells.find((c) => c.label.startsWith("owner · US-VA · lower_bills"));
-    const renterVa = r.cells.find((c) => c.label.startsWith("renter · US-VA · lower_bills"));
-    const ownerUs = r.cells.find((c) => c.label.startsWith("owner · US · lower_bills"));
+    const ownerVa = r.cells.find((c) => c.label.startsWith("owner · US-VA · any"));
+    const renterVa = r.cells.find((c) => c.label.startsWith("renter · US-VA · any"));
+    const ownerUs = r.cells.find((c) => c.label.startsWith("owner · US · any"));
     expect(ownerVa?.poolSize).toBe(1);
     expect(renterVa?.poolSize).toBe(0); // wrong tenure
     expect(ownerUs?.poolSize).toBe(0); // no state → no US-VA prefix
@@ -110,7 +124,7 @@ describe("kind mix", () => {
         comp({ kind: "explainer" }),
       ],
     });
-    const cell = r.cells.find((c) => c.label.startsWith("owner · US · lower_bills"));
+    const cell = r.cells.find((c) => c.label.startsWith("owner · US · any"));
     expect(cell?.kindMix).toEqual({
       action: 1,
       explainer: 2,
@@ -127,14 +141,14 @@ describe("authored share", () => {
   it("is max(0, 1 − pool/target) per cell", () => {
     // target 4, a cell with 1 eligible → 75% authored.
     const r = report({ components: [comp()] }, { targetReportItems: 4 });
-    const cell = r.cells.find((c) => c.label.startsWith("owner · US · lower_bills"));
+    const cell = r.cells.find((c) => c.label.startsWith("owner · US · any"));
     expect(cell?.authoredShare).toBeCloseTo(0.75);
   });
 
   it("caps at 0 (a full pool authors nothing)", () => {
     const many = Array.from({ length: 6 }, () => comp());
     const r = report({ components: many }, { targetReportItems: 4 });
-    const cell = r.cells.find((c) => c.label.startsWith("owner · US · lower_bills"));
+    const cell = r.cells.find((c) => c.label.startsWith("owner · US · any"));
     expect(cell?.authoredShare).toBe(0);
   });
 
@@ -143,7 +157,7 @@ describe("authored share", () => {
     const r = report({ components: [] }, { targetReportItems: 5, authoredShareCap: 0.4 });
     expect(r.gate.maxAuthoredShare).toBe(1);
     expect(r.gate.withinCap).toBe(false);
-    expect(r.gate.cellsOverCap).toBe(2 * LAUNCH_REGIONS.length * LANE_IDS.length);
+    expect(r.gate.cellsOverCap).toBe(GRID_CELLS);
   });
 
   it("gate ignores preset cells (only launch-scope grid counts)", () => {

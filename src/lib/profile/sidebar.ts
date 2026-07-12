@@ -50,6 +50,7 @@ const TENURE_LABELS: Record<string, string> = {
 
 const HOUSING_LABELS: Record<string, string> = {
   "single-family": "Single-family home",
+  townhouse: "Townhouse",
   apartment: "Apartment",
   condo: "Condo",
   mobile: "Mobile home",

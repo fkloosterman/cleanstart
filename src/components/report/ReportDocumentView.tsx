@@ -43,11 +43,18 @@ import {
   documentSections,
   type ActionItem,
   type BackgroundEntry,
+  type DocumentFigure,
   type ReportDocument,
   type SourceCitation,
 } from "@/lib/report/document";
 import type { ReportSectionId } from "@/lib/lanes/playbooks";
+import { supabase } from "@/integrations/supabase/client";
 import { cn } from "@/lib/utils";
+
+/** Resolve a frozen figure's bucket path to its world-readable public URL. */
+function figureUrl(storagePath: string): string {
+  return supabase.storage.from("content-media").getPublicUrl(storagePath).data.publicUrl;
+}
 
 /** D20's resolved label for authored (not-yet-reviewed) items. */
 const AUTHORED_LABEL = "General guidance — not yet from our reviewed library";
@@ -124,6 +131,31 @@ function GoalsSection({ doc }: { doc: ReportDocument }) {
   );
 }
 
+function Figure({ figure }: { figure: DocumentFigure }) {
+  return (
+    <figure className="mt-3">
+      <img
+        src={figureUrl(figure.storage_path)}
+        alt={figure.alt}
+        loading="lazy"
+        className="w-full rounded-lg border border-border bg-white"
+      />
+      {(figure.caption || figure.credit.source) && (
+        <figcaption className="mt-1.5 text-xs text-muted-foreground">
+          {figure.caption}
+          {figure.credit.source && (
+            <span className="opacity-70">
+              {figure.caption ? " · " : ""}
+              {figure.credit.source}
+              {figure.credit.license ? ` (${figure.credit.license})` : ""}
+            </span>
+          )}
+        </figcaption>
+      )}
+    </figure>
+  );
+}
+
 function BackgroundCard({ entry }: { entry: BackgroundEntry }) {
   return (
     <article className="rounded-xl border border-border bg-card p-5">
@@ -134,6 +166,9 @@ function BackgroundCard({ entry }: { entry: BackgroundEntry }) {
       <div className="text-sm leading-relaxed text-muted-foreground">
         <MessageResponse>{entry.body_md}</MessageResponse>
       </div>
+      {entry.figures.map((figure) => (
+        <Figure key={figure.slug} figure={figure} />
+      ))}
     </article>
   );
 }

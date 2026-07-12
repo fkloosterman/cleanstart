@@ -3,7 +3,7 @@ import { emptyProfile } from "@/lib/profile/normalize";
 import { applyPatches, type ProfilePatch } from "@/lib/profile/patches";
 import { buildCandidateContext } from "@/lib/content/candidates";
 import { deriveLane } from "@/lib/lanes/derive";
-import type { ContentComponent, ContentSource } from "@/lib/content/schema";
+import type { ContentComponent, ContentMedia, ContentSource } from "@/lib/content/schema";
 import type { SessionProfile } from "@/lib/profile/registry";
 import {
   assembleReportDocument,
@@ -248,6 +248,26 @@ const SOURCES: ContentSource[] = [
   },
 ];
 
+const MEDIA: ContentMedia[] = [
+  {
+    slug: "weatherize-diagram",
+    kind: "diagram",
+    storage_path: "media/weatherize-diagram.svg",
+    alt: "Air-leak paths in a house",
+    caption: "Where homes leak air.",
+    credit: { source: "CleanStart original", license: "CC-BY-4.0" },
+    technologies: ["weatherization"],
+    regions: ["US"],
+  },
+];
+
+/** A library bundle for assembly tests: components + sources + (optionally) media. */
+const LIB = (components: ContentComponent[], media: ContentMedia[] = []) => ({
+  components,
+  sources: SOURCES,
+  media,
+});
+
 function fullComponent(
   slug: string,
   kind: ContentComponent["kind"],
@@ -300,7 +320,7 @@ describe("assembleReportDocument", () => {
     const doc = assembleReportDocument(
       composition,
       input,
-      { components, sources: SOURCES },
+      LIB(components),
       "2026-07-12T00:00:00.000Z",
     );
 
@@ -322,6 +342,43 @@ describe("assembleReportDocument", () => {
     expect(doc.meta.readiness.ready).toBe(true);
   });
 
+  it("freezes an explainer's media into background figures, dropping unknown media slugs", () => {
+    const withMedia = [
+      fullComponent("audit", "action", { title: "Book an audit" }),
+      fullComponent("weatherize", "explainer", {
+        title: "Weatherize first",
+        media: ["weatherize-diagram", "ghost-diagram"], // one real, one unknown
+      }),
+    ];
+    const mediaInput = makeInput({
+      candidates: withMedia.map((c) =>
+        toComposerCandidate({
+          component: c,
+          score: 1,
+          breakdown: { impact: 1, interest: 0, effort: 0 },
+        }),
+      ),
+    });
+    const composition = validateComposerOutput(
+      rawOutput([rawItem({ component_slug: "audit", personalization: "Great first step." })]),
+      mediaInput,
+    );
+    const doc = assembleReportDocument(
+      composition,
+      mediaInput,
+      LIB(withMedia, MEDIA),
+      "2026-07-12T00:00:00.000Z",
+    );
+
+    const bg = doc.background.find((b) => b.component_slug === "weatherize");
+    expect(bg?.figures.map((f) => f.slug)).toEqual(["weatherize-diagram"]); // unknown dropped
+    expect(bg?.figures[0]).toMatchObject({
+      storage_path: "media/weatherize-diagram.svg",
+      alt: "Air-leak paths in a house",
+      credit: { source: "CleanStart original", license: "CC-BY-4.0" },
+    });
+  });
+
   it("keeps authored items with the model title and no sources", () => {
     const composition = validateComposerOutput(
       rawOutput([
@@ -340,7 +397,7 @@ describe("assembleReportDocument", () => {
     const doc = assembleReportDocument(
       composition,
       input,
-      { components, sources: SOURCES },
+      LIB(components),
       "2026-07-12T00:00:00.000Z",
     );
     const authored = doc.action_plan.find((i) => i.origin === "authored");
