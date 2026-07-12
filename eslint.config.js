@@ -6,7 +6,23 @@ import reactRefresh from "eslint-plugin-react-refresh";
 import tseslint from "typescript-eslint";
 
 export default tseslint.config(
-  { ignores: ["dist", ".output", ".vinxi", ".vercel"] },
+  // Non-source dirs eslint should never descend into. `node_modules` is
+  // listed explicitly: with a custom global-ignores object present, the
+  // implicit default isn't applied here, so `eslint .` walks all of
+  // node_modules — a couple of seconds on CI's Linux runner but minutes on
+  // Windows (readdir + AV over ~700MB). Listing it prunes the walk.
+  {
+    ignores: [
+      "dist",
+      ".output",
+      ".vinxi",
+      ".vercel",
+      "node_modules",
+      ".tanstack",
+      ".lovable",
+      ".claude",
+    ],
+  },
   {
     extends: [js.configs.recommended, ...tseslint.configs.recommended],
     files: ["**/*.{ts,tsx}"],
