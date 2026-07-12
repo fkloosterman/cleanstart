@@ -318,6 +318,30 @@ export type Database = {
           },
         ];
       };
+      rate_limit_counters: {
+        Row: {
+          bucket: string;
+          count: number;
+          subject: string;
+          updated_at: string;
+          window_start: string;
+        };
+        Insert: {
+          bucket: string;
+          count?: number;
+          subject: string;
+          updated_at?: string;
+          window_start: string;
+        };
+        Update: {
+          bucket?: string;
+          count?: number;
+          subject?: string;
+          updated_at?: string;
+          window_start?: string;
+        };
+        Relationships: [];
+      };
       sessions: {
         Row: {
           created_at: string;
@@ -364,7 +388,14 @@ export type Database = {
       [_ in never]: never;
     };
     Functions: {
-      [_ in never]: never;
+      increment_rate_limit: {
+        Args: {
+          p_bucket: string;
+          p_subject: string;
+          p_window_start: string;
+        };
+        Returns: number;
+      };
     };
     Enums: {
       [_ in never]: never;

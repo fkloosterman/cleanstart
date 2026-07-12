@@ -8,8 +8,10 @@
  * writes it directly — RLS ("Users manage own sessions" / "Users manage
  * messages in own sessions") permits it, so no new endpoint is needed.
  *
- * Reports and action items don't exist yet (WP3.x / WP4.x); when they do, this
- * is where their localStorage copies join the migration.
+ * The guest's generated report (WP3.10), when present, migrates too: it becomes
+ * the session's `reports` row, `document` and all, so a guest who generated a
+ * report before signing up keeps it. Action items live inside that document
+ * (Tier A seam 1), so no separate items copy is needed.
  *
  * Idempotent by contract: the caller clears guest localStorage on success, so
  * a second invocation has nothing to migrate. The shared-shape drift guard
@@ -19,7 +21,9 @@
 
 import type { UIMessage } from "ai";
 import { supabase } from "@/integrations/supabase/client";
+import type { Json } from "@/integrations/supabase/types";
 import { createSession } from "@/lib/sessions";
+import type { StoredGuestReport } from "@/lib/guest-storage";
 import { slotFilled } from "@/lib/profile/normalize";
 import { readiness } from "@/lib/profile/readiness";
 import { SLOT_NAMES, type SessionProfile } from "@/lib/profile/registry";
@@ -72,9 +76,11 @@ export async function migrateGuestSession(
   profile: SessionProfile,
   /** The guest's readiness stamp, if the gate was reached (§4.5, WP1.7). */
   readinessReachedAt: string | null,
+  /** The guest's generated report, if any (WP3.10) — copied to a `reports` row. */
+  report: StoredGuestReport | null = null,
 ): Promise<GuestMigrationResult | null> {
   const hasMessages = messages.length > 0;
-  if (!hasMessages && !profileHasData(profile)) return null;
+  if (!hasMessages && !profileHasData(profile) && !report) return null;
 
   // Carry the ratchet: an explicit guest stamp wins, but if the migrated
   // profile is already ready without one (older guest data), stamp it now so
@@ -107,6 +113,22 @@ export async function migrateGuestSession(
         .update({ title: firstUser.content.slice(0, 80), updated_at: new Date().toISOString() })
         .eq("id", sessionId);
     }
+  }
+
+  // Carry the guest's report, if they generated one (WP3.10). Attach it to the
+  // new session as its `reports` row — the same shape the authenticated path
+  // writes (document + persona; legacy columns keep their table defaults). RLS
+  // ("Users manage own reports") permits the insert under the new user_id.
+  // Ordered last so a report failure can't strand the conversation migration.
+  if (report?.document) {
+    const { error } = await supabase.from("reports").insert({
+      session_id: sessionId,
+      user_id: userId,
+      persona: report.persona,
+      document: report.document as Json,
+    });
+    if (error) throw error;
+    await supabase.from("sessions").update({ is_complete: true }).eq("id", sessionId);
   }
 
   return { sessionId, messageCount: messages.length };

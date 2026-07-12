@@ -27,6 +27,7 @@ import {
 import { toast } from "sonner";
 import { generateReport, getReport } from "@/lib/report.functions";
 import { generateGuestReport } from "@/lib/guest-report.functions";
+import { readGuestReport, writeGuestReport } from "@/lib/guest-storage";
 import { ReportDocumentView } from "@/components/report/ReportDocumentView";
 import { parseReportDocument } from "@/lib/report/document";
 import { REPORT_DOCUMENT_FIXTURES, type ReportFixtureKey } from "@/lib/report/fixtures";
@@ -185,10 +186,16 @@ function ReportPage() {
       .finally(() => setLoading(false));
   }, [sessionId, user, example, fetchReport]);
 
-  // Guest flow: read transcript from sessionStorage and generate without auth
+  // Guest flow (WP3.10): a "Generate report" click writes a generation request
+  // to sessionStorage and navigates here. When that request is present we
+  // generate, persist the result to localStorage, and consume the request. On a
+  // later visit or a browser restart (no pending request) we render the
+  // persisted report instead — no regeneration, no model call, no report-cap
+  // hit. The stored report survives a restart; the request does not.
   useEffect(() => {
     if (!guest || example || report || generating) return;
     if (typeof window === "undefined") return;
+
     let payload: {
       tenure: "homeowner" | "renter" | "curious" | null;
       profile?: unknown;
@@ -200,20 +207,55 @@ function ReportPage() {
     } catch {
       // ignore
     }
-    if (!payload || !payload.messages?.length) {
-      setError("No conversation found. Start a chat first.");
+
+    if (payload?.messages?.length) {
+      setGenerating(true);
+      setError(null);
+      buildGuestReport({ data: payload })
+        .then((r) => {
+          const row = r as unknown as ReportRow;
+          setReport(row);
+          // Persist so a browser restart re-renders without regenerating (§9).
+          writeGuestReport({
+            persona: row.persona,
+            created_at: row.created_at,
+            document: row.document,
+          });
+          // Consume the request so a reload doesn't regenerate or re-spend a
+          // report slot.
+          try {
+            window.sessionStorage.removeItem("cleanstart.guest-report.v1");
+          } catch {
+            // ignore
+          }
+        })
+        .catch((e) => {
+          const msg = e instanceof Error ? e.message : "Couldn't generate report";
+          setError(msg);
+          toast.error(msg);
+        })
+        .finally(() => setGenerating(false));
       return;
     }
-    setGenerating(true);
-    setError(null);
-    buildGuestReport({ data: payload })
-      .then((r) => setReport(r as unknown as ReportRow))
-      .catch((e) => {
-        const msg = e instanceof Error ? e.message : "Couldn't generate report";
-        setError(msg);
-        toast.error(msg);
-      })
-      .finally(() => setGenerating(false));
+
+    // No pending request: render the persisted report if the guest has one.
+    const stored = readGuestReport();
+    if (stored) {
+      setReport({
+        id: "guest",
+        session_id: "guest",
+        persona: stored.persona,
+        readiness_score: null,
+        top_options: [],
+        key_insights: [],
+        next_steps: [],
+        resources: [],
+        created_at: stored.created_at,
+        document: stored.document,
+      });
+      return;
+    }
+    setError("No conversation found. Start a chat first.");
   }, [guest, example, report, generating, buildGuestReport]);
 
   const handleGenerate = async () => {

@@ -24,6 +24,29 @@ export const GUEST_PROFILE_KEY = "cleanstart.profile.v1";
  * migrates as its own field.
  */
 export const GUEST_READINESS_KEY = "cleanstart.readiness-reached-at.v1";
+/**
+ * The guest's generated report (WP3.10, §9): the frozen ReportDocument plus the
+ * two fields the `reports` row carries alongside it. Persisted so a browser
+ * restart re-renders it without regenerating (no model call, no report-cap
+ * hit), and so the signup migration can copy it into a DB `reports` row. The
+ * document holds the action-plan items inline (Tier A seam 1), so this one key
+ * covers "report document + items".
+ */
+export const GUEST_REPORT_KEY = "cleanstart.report.v1";
+/**
+ * The guest session id (WP3.10): a stable per-conversation uuid that keys the
+ * per-session turn cap (D7). Minted lazily and re-minted on start-over, so a
+ * fresh conversation gets a fresh turn budget.
+ */
+export const GUEST_SESSION_ID_KEY = "cleanstart.guest-session-id.v1";
+
+/** The stored guest report — the DB `reports` row's shape, minus the ids (§9). */
+export interface StoredGuestReport {
+  persona: string | null;
+  created_at: string;
+  /** The frozen ReportDocument JSON; parsed with `parseReportDocument` on read. */
+  document: unknown;
+}
 
 /** The guest conversation as stored, or [] if absent/corrupt. */
 export function readGuestMessages(): UIMessage[] {
@@ -74,6 +97,46 @@ export function writeGuestReadinessReachedAt(reachedAt: string) {
   }
 }
 
+/** The guest's stored report, or null if none was generated / it's corrupt. */
+export function readGuestReport(): StoredGuestReport | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem(GUEST_REPORT_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as StoredGuestReport;
+    // A report without a document is unusable; treat it as absent.
+    return parsed && parsed.document ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+export function writeGuestReport(report: StoredGuestReport) {
+  try {
+    window.localStorage.setItem(GUEST_REPORT_KEY, JSON.stringify(report));
+  } catch {
+    // ignore
+  }
+}
+
+/**
+ * The guest session id, minted and persisted on first read (§9, WP3.10). SSR-
+ * safe: returns a throwaway id off the client (no window/localStorage), which
+ * is never persisted — the per-session cap only matters for real client turns.
+ */
+export function getGuestSessionId(): string {
+  if (typeof window === "undefined") return "ssr";
+  try {
+    const existing = window.localStorage.getItem(GUEST_SESSION_ID_KEY);
+    if (existing) return existing;
+    const id = crypto.randomUUID();
+    window.localStorage.setItem(GUEST_SESSION_ID_KEY, id);
+    return id;
+  } catch {
+    return crypto.randomUUID();
+  }
+}
+
 /** Drop every guest key — used on start-over and after a successful migration. */
 export function clearGuestState() {
   try {
@@ -82,6 +145,8 @@ export function clearGuestState() {
     window.localStorage.removeItem(GUEST_READINESS_KEY);
     window.localStorage.removeItem(GUEST_TENURE_KEY);
     window.localStorage.removeItem(GUEST_LOCATION_KEY);
+    window.localStorage.removeItem(GUEST_REPORT_KEY);
+    window.localStorage.removeItem(GUEST_SESSION_ID_KEY);
   } catch {
     // ignore
   }
