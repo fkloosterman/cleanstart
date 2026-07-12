@@ -7,10 +7,7 @@ import {
   parseReportDocument,
   reportDocumentSchema,
 } from "@/lib/report/document";
-import {
-  REPORT_DOCUMENT_FIXTURES,
-  REPORT_FIXTURE_KEYS,
-} from "@/lib/report/fixtures";
+import { REPORT_DOCUMENT_FIXTURES, REPORT_FIXTURE_KEYS } from "@/lib/report/fixtures";
 
 describe("reportDocumentSchema", () => {
   it("parses every fixture (every section shape validates)", () => {

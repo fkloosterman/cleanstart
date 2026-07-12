@@ -481,7 +481,9 @@ export function ProfileSidebarContent({
   // Read-only reports drop the unknown/blank rows — a frozen snapshot has
   // nothing to prompt the user to fill in.
   const groups = readOnly
-    ? model.map((g) => ({ ...g, fields: g.fields.filter((f) => f.filled) })).filter((g) => g.fields.length > 0)
+    ? model
+        .map((g) => ({ ...g, fields: g.fields.filter((f) => f.filled) }))
+        .filter((g) => g.fields.length > 0)
     : model;
   return (
     <div className="flex flex-col gap-5">

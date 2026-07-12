@@ -58,7 +58,12 @@ const lowerBillsProfile = profileFrom([
     value: { cost: 0.7, carbon: 0.1, comfort: 0.1, resilience: 0.05, learning: 0.05 },
     provenance: "inferred",
   },
-  { op: "append", slot: "goals", value: { text: "Cut my winter heating bills" }, provenance: "stated" },
+  {
+    op: "append",
+    slot: "goals",
+    value: { text: "Cut my winter heating bills" },
+    provenance: "stated",
+  },
   { op: "append", slot: "topics_discussed", value: "heat-pump", provenance: "inferred" },
   { op: "append", slot: "topics_discussed", value: "weatherization", provenance: "inferred" },
 ]);
@@ -211,7 +216,7 @@ const learning: ReportDocument = {
       component_slug: "community-solar-explained",
       title: "Community solar: sharing a solar farm without a roof",
       body_md:
-        "You don't need to own a roof to benefit. **Community solar** lets you subscribe to a share of a nearby solar farm and get credits on your utility bill for its output.\n\nFor renters, this is usually the only way to \"go solar\" — no installation, and you can typically cancel when you move.",
+        'You don\'t need to own a roof to benefit. **Community solar** lets you subscribe to a share of a nearby solar farm and get credits on your utility bill for its output.\n\nFor renters, this is usually the only way to "go solar" — no installation, and you can typically cancel when you move.',
       origin: "library",
       sources: ["doe-community-solar"],
     },
@@ -395,6 +400,4 @@ export const REPORT_DOCUMENT_FIXTURES = {
 
 export type ReportFixtureKey = keyof typeof REPORT_DOCUMENT_FIXTURES;
 
-export const REPORT_FIXTURE_KEYS = Object.keys(
-  REPORT_DOCUMENT_FIXTURES,
-) as ReportFixtureKey[];
+export const REPORT_FIXTURE_KEYS = Object.keys(REPORT_DOCUMENT_FIXTURES) as ReportFixtureKey[];

@@ -276,9 +276,7 @@ const SECTION_RENDERERS: Record<
 > = {
   about_you: (doc) => <AboutYouSection doc={doc} />,
   your_goals: (doc) => <GoalsSection doc={doc} />,
-  background: (doc, emphasis) => (
-    <BackgroundSection entries={doc.background} emphasis={emphasis} />
-  ),
+  background: (doc, emphasis) => <BackgroundSection entries={doc.background} emphasis={emphasis} />,
   action_plan: (doc) => <ActionPlanSection items={doc.action_plan} />,
   open_questions: (doc) => <OpenQuestionsSection questions={doc.open_questions} />,
   sources: (doc) => <SourcesSection sources={doc.sources} />,

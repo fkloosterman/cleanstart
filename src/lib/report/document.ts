@@ -93,9 +93,7 @@ export type ReportMeta = z.infer<typeof reportMetaSchema>;
 // SessionProfile and read tolerantly — a snapshot from an older bundle
 // still renders — so it is normalised on parse rather than strictly typed.
 
-export const aboutYouSchema = z
-  .unknown()
-  .transform((raw): SessionProfile => normalizeProfile(raw));
+export const aboutYouSchema = z.unknown().transform((raw): SessionProfile => normalizeProfile(raw));
 
 // ---------------------------------------------------------------------------
 // your_goals — model-authored headline + intro (§7.1)
