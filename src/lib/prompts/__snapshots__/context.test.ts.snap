@@ -138,8 +138,13 @@ What this user cares about most: lowering their bills. Lead with concrete saving
 
 Stage: you have some context. Explain the one or two most relevant options in plain language, each with a short how-it-works and an honest tradeoff.
 
-Grounding — draw factual claims only from these curated summaries, and cite them when you use them:
-- Community solar for renters: Subscribe to a shared solar array and get bill credits — no rooftop needed. [sources: Community Solar 101 — DOE]
+Grounding — a small set of vetted library entries for this household. Draw factual claims only from these; do not state facts the library doesn't support, and never write a URL yourself.
+When a claim comes from an entry, cite it by writing [cite:<slug>] right after the claim (use the bracketed slug shown). Cite only slugs listed here.
+To show a figure the entry lists, put [figure:<slug>] on its own line where it belongs. Only use figure slugs listed here.
+
+- [community-solar-basics] Community solar for renters: Subscribe to a shared solar array and get bill credits — no rooftop needed.
+    sources: Community Solar 101 — DOE
+    figures: community-solar-diagram (A shared solar array serving several homes)
 
 Still to learn — weave these in naturally, one at a time, never as an interrogation:
 - Location (needed before the report)

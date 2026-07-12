@@ -100,6 +100,8 @@ export interface RetrievedComponent {
   /** 2–3 sentence summary injected into context (never the full body). */
   summary: string;
   sources?: { label: string; publisher: string }[];
+  /** Library figures this component may show — the only images the agent can render (WP3.4). */
+  figures?: { slug: string; alt: string }[];
 }
 
 // ---------------------------------------------------------------------------
@@ -181,16 +183,35 @@ function stillToLearn(profile: SessionProfile, lane: LaneDerivation): string | n
   return `Still to learn — weave these in naturally, one at a time, never as an interrogation:\n${items.join("\n")}`;
 }
 
-/** Curated summaries the agent may cite (WP3.4); empty → omitted. */
+/**
+ * The grounding block (WP3.4, D4): the curated library entries retrieved for
+ * this user, plus the two inline directives the agent uses to cite and to show
+ * figures. Both are single-pass — emitted in the reply itself, parsed out
+ * client-side — so there is no extra model round-trip, and the agent can never
+ * fabricate a URL or render an image outside the library (the parser resolves
+ * only these slugs). Empty retrieval → the whole block is omitted.
+ */
 function groundingBlock(retrieved: RetrievedComponent[]): string | null {
   if (retrieved.length === 0) return null;
+
   const entries = retrieved.map((c) => {
-    const cites = c.sources?.length
-      ? ` [sources: ${c.sources.map((s) => `${s.label} — ${s.publisher}`).join("; ")}]`
-      : "";
-    return `- ${c.title}: ${c.summary}${cites}`;
+    const lines = [`- [${c.slug}] ${c.title}: ${c.summary}`];
+    if (c.sources?.length) {
+      lines.push(`    sources: ${c.sources.map((s) => `${s.label} — ${s.publisher}`).join("; ")}`);
+    }
+    if (c.figures?.length) {
+      lines.push(`    figures: ${c.figures.map((f) => `${f.slug} (${f.alt})`).join("; ")}`);
+    }
+    return lines.join("\n");
   });
-  return `Grounding — draw factual claims only from these curated summaries, and cite them when you use them:\n${entries.join("\n")}`;
+
+  return [
+    "Grounding — a small set of vetted library entries for this household. Draw factual claims only from these; do not state facts the library doesn't support, and never write a URL yourself.",
+    "When a claim comes from an entry, cite it by writing [cite:<slug>] right after the claim (use the bracketed slug shown). Cite only slugs listed here.",
+    "To show a figure the entry lists, put [figure:<slug>] on its own line where it belongs. Only use figure slugs listed here.",
+    "",
+    entries.join("\n"),
+  ].join("\n");
 }
 
 // ---------------------------------------------------------------------------

@@ -20,15 +20,36 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { generateText } from "ai";
 import { createModelForPurpose } from "@/lib/ai-gateway.server";
+import {
+  buildCandidateContext,
+  DEFAULT_CANDIDATE_LIMIT,
+  selectCandidates,
+} from "@/lib/content/candidates";
+import type { ContentComponent } from "@/lib/content/schema";
 import { deriveLane } from "@/lib/lanes/derive";
-import { resolveModelConfig } from "@/lib/model-map";
+import { resolveModelConfig, type ModelPurpose } from "@/lib/model-map";
 import { normalizeProfile, slotFilled } from "@/lib/profile/normalize";
 import { applyPatches } from "@/lib/profile/patches";
 import { extractProfilePatches } from "@/lib/profile/extractor";
 import { createExtractionGenerate } from "@/lib/profile/extractor.server";
 import type { SessionProfile } from "@/lib/profile/registry";
+import {
+  assembleReportDocument,
+  authoringAllowedTopics,
+  buildComposerPrompt,
+  buildComposerSystem,
+  composerOutputSchema,
+  deterministicFallback,
+  parseComposerJson,
+  toComposerCandidate,
+  validateComposerOutput,
+  type ComposerInput,
+} from "@/lib/report/composer";
+import type { ReportDocument } from "@/lib/report/document";
 import type {
   AnyFixture,
+  ComposerExpectation,
+  ComposerFixture,
   EvalAssertion,
   EvalFixtureModule,
   ExtractionExpectation,
@@ -135,6 +156,91 @@ function checkExpectation(
   }
 }
 
+function checkComposerExpectation(
+  exp: ComposerExpectation,
+  doc: ReportDocument,
+  componentBySlug: Map<string, ContentComponent>,
+  candidateSlugs: Set<string>,
+): string | null {
+  const libraryItemSlugs = doc.action_plan
+    .filter((i) => i.component_slug !== null)
+    .map((i) => i.component_slug as string);
+
+  switch (exp.kind) {
+    case "slugs-valid": {
+      const bad = libraryItemSlugs.filter((slug) => !candidateSlugs.has(slug));
+      return bad.length === 0
+        ? null
+        : `expected every library item to be a candidate slug; got non-candidates: ${bad.join(", ")}`;
+    }
+    case "reveal-max": {
+      const revealed = doc.action_plan.filter((i) => i.revealed).length;
+      return revealed <= exp.max
+        ? null
+        : `expected at most ${exp.max} revealed items, got ${revealed}`;
+    }
+    case "min-items":
+      return doc.action_plan.length >= exp.count
+        ? null
+        : `expected at least ${exp.count} action items, got ${doc.action_plan.length}`;
+    case "covers-tech": {
+      const covered = libraryItemSlugs.some((slug) =>
+        componentBySlug.get(slug)?.technologies.includes(exp.tech),
+      );
+      return covered ? null : `expected an action item about "${exp.tech}", none present`;
+    }
+    case "suppresses-tech": {
+      const slugs = [
+        ...libraryItemSlugs,
+        ...doc.background.map((b) => b.component_slug).filter((s): s is string => s !== null),
+      ];
+      const leaked = slugs.some((slug) =>
+        componentBySlug.get(slug)?.technologies.includes(exp.tech),
+      );
+      return leaked ? `expected nothing about ruled-out "${exp.tech}", but it appeared` : null;
+    }
+  }
+}
+
+async function runComposer(fixture: ComposerFixture, apiKey: string): Promise<string[]> {
+  const ctx = buildCandidateContext(fixture.profile);
+  const scored = selectCandidates(fixture.components, fixture.profile, {
+    limit: DEFAULT_CANDIDATE_LIMIT,
+  });
+  const candidates = scored.map(toComposerCandidate);
+  const input: ComposerInput = {
+    profile: fixture.profile,
+    derivation: deriveLane(fixture.profile.motivation_weights.value),
+    candidates,
+    conversationDigest: fixture.digest ?? "",
+    authoringAllowedFor: authoringAllowedTopics(candidates, ctx),
+  };
+
+  const { text } = await generateText({
+    model: createModelForPurpose("composition", apiKey),
+    system: buildComposerSystem(),
+    prompt: buildComposerPrompt(input),
+    temperature: 0,
+  });
+
+  const parsed = parseComposerJson(text);
+  const zres = parsed !== null ? composerOutputSchema.safeParse(parsed) : null;
+  const composition =
+    zres && zres.success ? validateComposerOutput(zres.data, input) : deterministicFallback(input);
+  const doc = assembleReportDocument(
+    composition,
+    input,
+    { components: fixture.components, sources: fixture.sources ?? [], media: fixture.media ?? [] },
+    new Date().toISOString(),
+  );
+
+  const componentBySlug = new Map(fixture.components.map((c) => [c.slug, c]));
+  const candidateSlugs = new Set(candidates.map((c) => c.slug));
+  return fixture.expect
+    .map((e) => checkComposerExpectation(e, doc, componentBySlug, candidateSlugs))
+    .filter((e): e is string => e !== null);
+}
+
 async function loadFixtures(): Promise<AnyFixture[]> {
   const files = readdirSync(FIXTURES_DIR)
     .filter((f) => f.endsWith(".fixture.ts"))
@@ -188,14 +294,21 @@ if (fixtures.length === 0) {
 
 let failures = 0;
 for (const fixture of fixtures) {
-  const purpose = fixture.type === "extraction" ? "extraction" : fixture.purpose;
+  const purpose: ModelPurpose =
+    fixture.type === "extraction"
+      ? "extraction"
+      : fixture.type === "composer"
+        ? "composition"
+        : fixture.purpose;
   const { modelId } = resolveModelConfig(purpose, process.env);
   let errors: string[];
   try {
     errors =
       fixture.type === "extraction"
         ? await runExtraction(fixture, apiKey)
-        : await runText(fixture, apiKey);
+        : fixture.type === "composer"
+          ? await runComposer(fixture, apiKey)
+          : await runText(fixture, apiKey);
   } catch (err) {
     errors = [`model call failed: ${err instanceof Error ? err.message : String(err)}`];
   }

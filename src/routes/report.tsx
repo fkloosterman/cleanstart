@@ -27,11 +27,17 @@ import {
 import { toast } from "sonner";
 import { generateReport, getReport } from "@/lib/report.functions";
 import { generateGuestReport } from "@/lib/guest-report.functions";
+import { readGuestReport, writeGuestReport } from "@/lib/guest-storage";
+import { ReportDocumentView } from "@/components/report/ReportDocumentView";
+import { parseReportDocument } from "@/lib/report/document";
+import { REPORT_DOCUMENT_FIXTURES, type ReportFixtureKey } from "@/lib/report/fixtures";
 
 const searchSchema = z.object({
   sessionId: z.string().uuid().optional(),
   example: z.coerce.boolean().optional(),
   guest: z.coerce.boolean().optional(),
+  /** Preview a hand-written ReportDocument fixture (WP3.5); dev/demo only. */
+  doc: z.string().optional(),
 });
 
 export const Route = createFileRoute("/report")({
@@ -55,6 +61,8 @@ type ReportRow = {
   next_steps: unknown;
   resources: unknown;
   created_at: string;
+  /** The structured ReportDocument (WP3.5+); null for legacy reports (D5). */
+  document?: unknown;
 };
 
 type Option = { title: string; why: string; good_fit_when: string[]; tradeoffs: string };
@@ -121,8 +129,43 @@ const EXAMPLE: ReportRow = {
   ],
 };
 
+/**
+ * Pick the renderer for a report row: the structured document renderer
+ * (WP3.5) when `document` is present, otherwise the legacy renderer (D5 —
+ * old rows render exactly as before, never regenerated).
+ */
+function ReportSurface({
+  report,
+  isExample,
+  onRegenerate,
+  regenerating,
+}: {
+  report: ReportRow;
+  isExample?: boolean;
+  onRegenerate?: () => void;
+  regenerating?: boolean;
+}) {
+  const document = parseReportDocument(report.document);
+  if (document) {
+    return (
+      <>
+        <PrivacyBanner />
+        <ReportDocumentView document={document} isExample={isExample} />
+      </>
+    );
+  }
+  return (
+    <ReportView
+      report={report}
+      isExample={isExample}
+      onRegenerate={onRegenerate}
+      regenerating={regenerating}
+    />
+  );
+}
+
 function ReportPage() {
-  const { sessionId, example, guest } = Route.useSearch();
+  const { sessionId, example, guest, doc } = Route.useSearch();
   const { user, loading: authLoading } = useAuth();
   const navigate = useNavigate();
   const fetchReport = useServerFn(getReport);
@@ -143,12 +186,19 @@ function ReportPage() {
       .finally(() => setLoading(false));
   }, [sessionId, user, example, fetchReport]);
 
-  // Guest flow: read transcript from sessionStorage and generate without auth
+  // Guest flow (WP3.10): a "Generate report" click writes a generation request
+  // to sessionStorage and navigates here. When that request is present we
+  // generate, persist the result to localStorage, and consume the request. On a
+  // later visit or a browser restart (no pending request) we render the
+  // persisted report instead — no regeneration, no model call, no report-cap
+  // hit. The stored report survives a restart; the request does not.
   useEffect(() => {
     if (!guest || example || report || generating) return;
     if (typeof window === "undefined") return;
+
     let payload: {
       tenure: "homeowner" | "renter" | "curious" | null;
+      profile?: unknown;
       messages: { role: "user" | "assistant" | "system"; content: string }[];
     } | null = null;
     try {
@@ -157,20 +207,55 @@ function ReportPage() {
     } catch {
       // ignore
     }
-    if (!payload || !payload.messages?.length) {
-      setError("No conversation found. Start a chat first.");
+
+    if (payload?.messages?.length) {
+      setGenerating(true);
+      setError(null);
+      buildGuestReport({ data: payload })
+        .then((r) => {
+          const row = r as unknown as ReportRow;
+          setReport(row);
+          // Persist so a browser restart re-renders without regenerating (§9).
+          writeGuestReport({
+            persona: row.persona,
+            created_at: row.created_at,
+            document: row.document,
+          });
+          // Consume the request so a reload doesn't regenerate or re-spend a
+          // report slot.
+          try {
+            window.sessionStorage.removeItem("cleanstart.guest-report.v1");
+          } catch {
+            // ignore
+          }
+        })
+        .catch((e) => {
+          const msg = e instanceof Error ? e.message : "Couldn't generate report";
+          setError(msg);
+          toast.error(msg);
+        })
+        .finally(() => setGenerating(false));
       return;
     }
-    setGenerating(true);
-    setError(null);
-    buildGuestReport({ data: payload })
-      .then((r) => setReport(r as unknown as ReportRow))
-      .catch((e) => {
-        const msg = e instanceof Error ? e.message : "Couldn't generate report";
-        setError(msg);
-        toast.error(msg);
-      })
-      .finally(() => setGenerating(false));
+
+    // No pending request: render the persisted report if the guest has one.
+    const stored = readGuestReport();
+    if (stored) {
+      setReport({
+        id: "guest",
+        session_id: "guest",
+        persona: stored.persona,
+        readiness_score: null,
+        top_options: [],
+        key_insights: [],
+        next_steps: [],
+        resources: [],
+        created_at: stored.created_at,
+        document: stored.document,
+      });
+      return;
+    }
+    setError("No conversation found. Start a chat first.");
   }, [guest, example, report, generating, buildGuestReport]);
 
   const handleGenerate = async () => {
@@ -190,8 +275,22 @@ function ReportPage() {
     }
   };
 
+  // Preview a hand-written ReportDocument fixture (WP3.5) — the composer
+  // doesn't exist yet, so this is how the new renderer is exercised.
+  if (doc && doc in REPORT_DOCUMENT_FIXTURES) {
+    return (
+      <>
+        <PrivacyBanner />
+        <ReportDocumentView
+          document={REPORT_DOCUMENT_FIXTURES[doc as ReportFixtureKey]}
+          isExample
+        />
+      </>
+    );
+  }
+
   if (example) {
-    return <ReportView report={EXAMPLE} isExample />;
+    return <ReportSurface report={EXAMPLE} isExample />;
   }
 
   if (guest) {
@@ -219,7 +318,7 @@ function ReportPage() {
         </div>
       );
     }
-    if (report) return <ReportView report={report} />;
+    if (report) return <ReportSurface report={report} />;
   }
 
   if (!sessionId) {
@@ -295,7 +394,7 @@ function ReportPage() {
     );
   }
 
-  return <ReportView report={report} onRegenerate={handleGenerate} regenerating={generating} />;
+  return <ReportSurface report={report} onRegenerate={handleGenerate} regenerating={generating} />;
 }
 
 function ReportView({

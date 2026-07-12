@@ -66,7 +66,20 @@ export type Preference = z.infer<typeof preferenceSchema>;
 
 const tenureSchema = z.enum(["owner", "renter", "other"]);
 
-const housingTypeSchema = z.enum(["single-family", "apartment", "condo", "mobile"]);
+/**
+ * The housing types a profile can hold. Exported so anything modelling a real
+ * profile (e.g. the corpus-coverage grid) uses the same set — a content file may
+ * *target* other housing tags, but only these can ever appear in a user profile.
+ */
+export const HOUSING_TYPES = [
+  "single-family",
+  "townhouse",
+  "apartment",
+  "condo",
+  "mobile",
+] as const;
+
+const housingTypeSchema = z.enum(HOUSING_TYPES);
 
 // Coarse by design: state/province level, never an address. The zip is
 // kept only for utility- and program-level content matching and is
@@ -185,7 +198,7 @@ export const SLOT_REGISTRY = {
   housing_type: {
     kind: "scalar",
     schema: housingTypeSchema,
-    extractor_hint: "The kind of home: single-family, apartment, condo, or mobile",
+    extractor_hint: "The kind of home: single-family, townhouse, apartment, condo, or mobile",
     sidebar: { label: "Home type", group: "context" },
     durable: true,
     elicitation: "conversational",

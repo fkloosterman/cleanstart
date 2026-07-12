@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 360" role="img"
+     aria-label="Cross-section of a house showing common air-leak paths at the attic, windows, doors, and rim joist">
+  <rect x="0" y="0" width="640" height="360" rx="16" fill="#f8fafc"/>
+  <style>
+    .lbl{font:600 15px system-ui,sans-serif;fill:#0f172a}
+    .sub{font:13px system-ui,sans-serif;fill:#475569}
+    .leak{font:700 12px system-ui,sans-serif;fill:#b91c1c}
+    .cap{font:700 13px system-ui,sans-serif;fill:#0369a1}
+  </style>
+  <defs>
+    <marker id="a3" markerWidth="10" markerHeight="10" refX="7" refY="3" orient="auto">
+      <path d="M0 0 L7 3 L0 6 Z" fill="#b91c1c"/>
+    </marker>
+  </defs>
+
+  <!-- House cross-section -->
+  <rect x="180" y="150" width="280" height="150" fill="#eef2ff" stroke="#c7d2fe"/>
+  <path d="M320 80 L470 150 L170 150 Z" fill="#e0e7ff" stroke="#a5b4fc"/>
+  <line x1="180" y1="230" x2="460" y2="230" stroke="#c7d2fe"/>
+  <text x="320" y="200" text-anchor="middle" class="sub">living space</text>
+  <text x="320" y="270" text-anchor="middle" class="sub">basement / crawlspace</text>
+
+  <!-- Windows and door -->
+  <rect x="220" y="170" width="40" height="40" fill="#fff" stroke="#94a3b8"/>
+  <rect x="380" y="170" width="40" height="40" fill="#fff" stroke="#94a3b8"/>
+  <rect x="305" y="185" width="30" height="45" fill="#fff" stroke="#94a3b8"/>
+
+  <!-- Leak arrows -->
+  <path d="M320 118 V88" stroke="#b91c1c" stroke-width="2.5" fill="none" marker-end="url(#a3)"/>
+  <text x="328" y="86" class="leak">attic</text>
+  <path d="M240 190 H196" stroke="#b91c1c" stroke-width="2.5" fill="none" marker-end="url(#a3)"/>
+  <text x="150" y="182" class="leak">windows</text>
+  <path d="M400 190 H444" stroke="#b91c1c" stroke-width="2.5" fill="none" marker-end="url(#a3)"/>
+  <text x="470" y="182" class="leak">windows</text>
+  <path d="M320 230 V236 H360" stroke="#b91c1c" stroke-width="2.5" fill="none" marker-end="url(#a3)"/>
+  <text x="366" y="240" class="leak">doors / gaps</text>
+  <path d="M200 244 H160" stroke="#b91c1c" stroke-width="2.5" fill="none" marker-end="url(#a3)"/>
+  <text x="120" y="238" class="leak">rim joist</text>
+
+  <text x="320" y="330" text-anchor="middle" class="cap">Seal these leaks and insulate — the biggest comfort-and-savings win.</text>
+</svg>

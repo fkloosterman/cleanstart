@@ -1,6 +1,7 @@
+import type { ContentComponent, ContentMedia, ContentSource } from "@/lib/content/schema";
 import type { LaneId } from "@/lib/lanes/playbooks";
 import type { ModelPurpose } from "@/lib/model-map";
-import type { Preference, SlotName } from "@/lib/profile/registry";
+import type { Preference, SessionProfile, SlotName } from "@/lib/profile/registry";
 
 /**
  * One eval assertion against the model's text output. Extend this union as
@@ -64,7 +65,42 @@ export interface ExtractionFixture {
   expect: ExtractionExpectation[];
 }
 
-export type AnyFixture = TextFixture | ExtractionFixture;
+/**
+ * An assertion on the report the composer produces for a (profile, library)
+ * pair (§6.5). Run against the assembled `ReportDocument`, so it exercises the
+ * whole pipeline: candidate selection → model call → validation → assembly.
+ */
+export type ComposerExpectation =
+  /** Every library action item references a real candidate slug (slug whitelist held). */
+  | { kind: "slugs-valid" }
+  /** No revealed *or* held-back item exceeds the progressive-disclosure reveal cap. */
+  | { kind: "reveal-max"; max: number }
+  /** At least `count` action items survived — the report isn't empty. */
+  | { kind: "min-items"; count: number }
+  /** Some action item is a component tagged with `tech` — interest coverage. */
+  | { kind: "covers-tech"; tech: string }
+  /** No item or background entry is a component tagged with `tech` — ruled-out suppression. */
+  | { kind: "suppresses-tech"; tech: string };
+
+/**
+ * A composer fixture: a synthetic content library plus a profile; the runner
+ * selects candidates, calls the composer, assembles the document, and checks it.
+ * Always uses the `composition` purpose.
+ */
+export interface ComposerFixture {
+  type: "composer";
+  name: string;
+  profile: SessionProfile;
+  components: ContentComponent[];
+  sources?: ContentSource[];
+  /** Optional curated media, resolved into the document's background figures (§3.2). */
+  media?: ContentMedia[];
+  /** Optional conversation highlights fed to the composer digest. */
+  digest?: string;
+  expect: ComposerExpectation[];
+}
+
+export type AnyFixture = TextFixture | ExtractionFixture | ComposerFixture;
 
 /** A fixture file default-exports one fixture or an array of them. */
 export type EvalFixtureModule = AnyFixture | AnyFixture[];

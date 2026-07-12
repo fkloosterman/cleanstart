@@ -19,6 +19,7 @@ import {
   readGuestMessages,
   readGuestProfile,
   readGuestReadinessReachedAt,
+  readGuestReport,
 } from "@/lib/guest-storage";
 import { guestMessagesFromUI, migrateGuestSession } from "@/lib/guest-migration";
 
@@ -33,13 +34,21 @@ export function useGuestMigration() {
   useEffect(() => {
     if (loading || !user || ranRef.current) return;
     const messages = guestMessagesFromUI(readGuestMessages());
-    if (messages.length === 0) return; // nothing to migrate
+    const report = readGuestReport();
+    // Nothing to migrate unless there's a conversation or a generated report.
+    if (messages.length === 0 && !report) return;
     ranRef.current = true;
     const profile = readGuestProfile();
     const readinessReachedAt = readGuestReadinessReachedAt();
     void (async () => {
       try {
-        const result = await migrateGuestSession(user.id, messages, profile, readinessReachedAt);
+        const result = await migrateGuestSession(
+          user.id,
+          messages,
+          profile,
+          readinessReachedAt,
+          report,
+        );
         // Stop using local state; clearing also makes a repeat migration a
         // no-op even if this hook runs again.
         clearGuestState();

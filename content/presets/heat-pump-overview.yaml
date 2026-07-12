@@ -1,0 +1,15 @@
+slug: heat-pump-overview
+label: What is a heat pump?
+category: Heat pumps
+first_message: What is a heat pump and should I care?
+profile_patches:
+  - op: append
+    slot: preferences
+    provenance: stated
+    value:
+      entity: tech:heat-pump
+      stance: curious
+      provenance: stated
+tenures: []
+regions:
+  - US

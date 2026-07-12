@@ -4,6 +4,8 @@ import { guestMessagesFromUI } from "@/lib/guest-migration";
 import { emptyProfile, normalizeProfile } from "@/lib/profile/normalize";
 import { applyPatches, type ProfilePatch } from "@/lib/profile/patches";
 import type { SessionProfile } from "@/lib/profile/registry";
+import { parseReportDocument } from "@/lib/report/document";
+import { REPORT_DOCUMENT_FIXTURES } from "@/lib/report/fixtures";
 
 function ui(role: UIMessage["role"], text: string): UIMessage {
   return { id: `${role}-${text}`, role, parts: [{ type: "text", text }] };
@@ -97,5 +99,28 @@ describe("profile shared-shape drift guard", () => {
       (p) => (p as { entity: string }).entity === "financing:loan",
     ) as { provenance: string } | undefined;
     expect(loan?.provenance).toBe("edited");
+  });
+});
+
+// The report drift guard (WP3.10, §9): the guest report document is persisted
+// to localStorage in exactly the shape the DB `reports.document` JSONB holds, so
+// the signup migration is a transform-free copy. Guest stores
+// `JSON.stringify(document)`; the DB stores the same object as JSONB. Both are
+// read back through `parseReportDocument`. If the document ever gained a shape
+// that survives one path but not the other, this fails.
+describe("report document shared-shape drift guard", () => {
+  it("localStorage and DB JSON round-trips parse to the same document", () => {
+    const document = REPORT_DOCUMENT_FIXTURES.lower_bills;
+
+    // Guest path: JSON.stringify → JSON.parse → parse.
+    const guest = parseReportDocument(JSON.parse(JSON.stringify(document)));
+    // DB path: the same object as JSONB, modelled as a structural clone.
+    const db = parseReportDocument(structuredClone(document) as unknown);
+
+    expect(guest).not.toBeNull();
+    expect(guest).toEqual(db);
+    // The action-plan items ride inside the document (Tier A seam 1), so they
+    // migrate with it — no separate items copy to drift.
+    expect(guest?.action_plan).toEqual(document.action_plan);
   });
 });

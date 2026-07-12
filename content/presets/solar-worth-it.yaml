@@ -1,0 +1,15 @@
+slug: solar-worth-it
+label: Is solar worth it?
+category: Solar
+first_message: Is solar worth it for my home?
+profile_patches:
+  - op: append
+    slot: preferences
+    provenance: stated
+    value:
+      entity: tech:solar
+      stance: curious
+      provenance: stated
+tenures: [owner]
+regions:
+  - US

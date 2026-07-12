@@ -1,0 +1,13 @@
+slug: ev-charging-levels-diagram
+kind: diagram
+storage_path: media/ev-charging-levels-diagram.svg
+alt: Comparison of EV charging levels — Level 1 from a standard outlet is slowest, Level 2 is faster, and DC fast charging is fastest
+caption: Charging speed depends on the source, from a wall outlet to a DC fast charger.
+credit:
+  source: CleanStart original
+  license: CC-BY-4.0
+technologies:
+  - ev
+  - ev-charger
+regions:
+  - US

@@ -11,6 +11,9 @@
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
+    "validate:content": "bun scripts/validate-content.ts",
+    "corpus-report": "bun scripts/corpus-report.ts",
+    "sync:content": "bun scripts/sync-content.ts",
     "evals": "bun evals/run.ts",
     "format": "prettier --write ."
   },
@@ -80,6 +83,7 @@
     "use-stick-to-bottom": "^1.1.6",
     "vaul": "^1.1.2",
     "vite-tsconfig-paths": "^6.0.2",
+    "yaml": "^2.9.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {

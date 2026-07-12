@@ -11,6 +11,7 @@ import {
   ConversationScrollButton,
 } from "@/components/ai-elements/conversation";
 import { Message, MessageContent, MessageResponse } from "@/components/ai-elements/message";
+import { AssistantMessage } from "@/components/chat/AssistantMessage";
 import {
   PromptInput,
   PromptInputTextarea,
@@ -47,15 +48,21 @@ function storageKey(persona: string | null) {
   return `${STORAGE_KEY_PREFIX}.${persona ?? "default"}`;
 }
 
+// Outer component: loads this persona's saved transcript from localStorage.
+// The actual useChat-driven view is a separate component keyed on persona, so
+// it only mounts once initialMessages is loaded — ai-sdk's useChat seeds its
+// message list from props once per mount and ignores later prop changes, so
+// mounting before the load finished would leave the list stuck at [] and let
+// the persist effect clobber the stored conversation.
 function GuestChatPage() {
   const { persona: searchPersona } = Route.useSearch();
   const persona = searchPersona ?? null;
 
   const [initialMessages, setInitialMessages] = useState<UIMessage[] | null>(null);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  // Load from localStorage once on mount (client-only)
+  // Load from localStorage once per persona (client-only)
   useEffect(() => {
+    setInitialMessages(null);
     if (typeof window === "undefined") return;
     try {
       const raw = window.localStorage.getItem(storageKey(persona));
@@ -70,6 +77,32 @@ function GuestChatPage() {
     setInitialMessages([]);
   }, [persona]);
 
+  if (initialMessages === null) {
+    return (
+      <div className="flex min-h-[60vh] items-center justify-center">
+        <div className="text-sm text-muted-foreground">Loading…</div>
+      </div>
+    );
+  }
+
+  return (
+    <GuestChatConversation
+      key={persona ?? "default"}
+      persona={persona}
+      initialMessages={initialMessages}
+    />
+  );
+}
+
+function GuestChatConversation({
+  persona,
+  initialMessages,
+}: {
+  persona: string | null;
+  initialMessages: UIMessage[];
+}) {
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
   const transport = useMemo(
     () =>
       new DefaultChatTransport({
@@ -81,38 +114,32 @@ function GuestChatPage() {
 
   const { messages, sendMessage, status, error, setMessages } = useChat({
     id: `guest:${persona ?? "default"}`,
-    messages: initialMessages ?? [],
+    messages: initialMessages,
     transport,
     onError(err) {
       toast.error(err.message || "Something went wrong");
     },
   });
 
-  // Persist on every change
+  // Persist on every change. Safe from mount: useChat seeded from
+  // initialMessages, so the first write mirrors what was just loaded rather
+  // than overwriting it with an empty list.
   useEffect(() => {
-    if (typeof window === "undefined" || initialMessages === null) return;
+    if (typeof window === "undefined") return;
     try {
       window.localStorage.setItem(storageKey(persona), JSON.stringify(messages));
     } catch {
       // storage full or unavailable; ignore
     }
-  }, [messages, persona, initialMessages]);
+  }, [messages, persona]);
 
   useEffect(() => {
     if (status === "ready") textareaRef.current?.focus();
   }, [status]);
 
   useEffect(() => {
-    if (initialMessages !== null) textareaRef.current?.focus();
-  }, [initialMessages]);
-
-  if (initialMessages === null) {
-    return (
-      <div className="flex min-h-[60vh] items-center justify-center">
-        <div className="text-sm text-muted-foreground">Loading…</div>
-      </div>
-    );
-  }
+    textareaRef.current?.focus();
+  }, []);
 
   const isBusy = status === "submitted" || status === "streaming";
 
@@ -167,15 +194,20 @@ function GuestChatPage() {
                 description="Ask anything about solar, heat pumps, EVs, weatherization, or incentives."
               />
             ) : (
-              messages.map((m) => (
-                <Message key={m.id} from={m.role === "user" ? "user" : "assistant"}>
-                  <MessageContent>
-                    <MessageResponse>
-                      {m.parts.map((p) => (p.type === "text" ? p.text : "")).join("")}
-                    </MessageResponse>
-                  </MessageContent>
-                </Message>
-              ))
+              messages.map((m) => {
+                const text = m.parts.map((p) => (p.type === "text" ? p.text : "")).join("");
+                return (
+                  <Message key={m.id} from={m.role === "user" ? "user" : "assistant"}>
+                    <MessageContent>
+                      {m.role === "assistant" ? (
+                        <AssistantMessage text={text} />
+                      ) : (
+                        <MessageResponse>{text}</MessageResponse>
+                      )}
+                    </MessageContent>
+                  </Message>
+                );
+              })
             )}
             {status === "submitted" && (
               <Message from="assistant">
