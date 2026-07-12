@@ -27,6 +27,7 @@ import {
   writeGuestProfile,
   readGuestReadinessReachedAt,
   writeGuestReadinessReachedAt,
+  getGuestSessionId,
   clearGuestState,
 } from "@/lib/guest-storage";
 import { missingSlotLabels } from "@/lib/profile/readiness-gate";
@@ -267,8 +268,15 @@ function ChatPage() {
         api: "/api/public/chat-guest",
         // Read the profile fresh at send time so it carries any patches
         // applied since mount (WP1.5); the server patches onto it and
-        // streams the delta back (see onData below).
-        body: () => ({ persona: null, tenure, location, profile: readGuestProfile() }),
+        // streams the delta back (see onData below). guestSessionId keys the
+        // per-session turn cap (WP3.10, D7).
+        body: () => ({
+          persona: null,
+          tenure,
+          location,
+          profile: readGuestProfile(),
+          guestSessionId: getGuestSessionId(),
+        }),
       }),
     [tenure, location],
   );

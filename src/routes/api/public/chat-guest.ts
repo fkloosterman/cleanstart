@@ -11,6 +11,8 @@ import { extractProfilePatches } from "@/lib/profile/extractor";
 import { createExtractionGenerate } from "@/lib/profile/extractor.server";
 import { normalizeProfile, slotValue } from "@/lib/profile/normalize";
 import { PROFILE_PATCH_PART_TYPE } from "@/lib/profile/stream";
+import { dayWindowStart, readGuestRateLimits, SESSION_WINDOW_START } from "@/lib/rate-limit";
+import { clientIp, enforceRateLimit } from "@/lib/rate-limit.server";
 import { createFileRoute } from "@tanstack/react-router";
 import {
   convertToModelMessages,
@@ -32,6 +34,12 @@ type Body = {
   messages?: UIMessage[];
   /** The guest's current localStorage profile (§9); patched per turn (WP1.5). */
   profile?: unknown;
+  /**
+   * The guest's session id (WP3.10) — a client-minted uuid in localStorage,
+   * stable across a conversation. Keys the per-session turn cap (D7). Optional:
+   * the daily IP cap still applies when it is absent.
+   */
+  guestSessionId?: string;
 };
 
 function textOf(msg: UIMessage) {
@@ -39,19 +47,6 @@ function textOf(msg: UIMessage) {
     .map((p) => (p.type === "text" ? p.text : ""))
     .join("")
     .trim();
-}
-
-// Very small in-memory rate limiter, per worker instance. Best-effort only.
-const RATE_LIMIT = 30; // requests
-const WINDOW_MS = 60_000;
-const hits = new Map<string, number[]>();
-
-function rateLimited(ip: string) {
-  const now = Date.now();
-  const arr = (hits.get(ip) ?? []).filter((t) => now - t < WINDOW_MS);
-  arr.push(now);
-  hits.set(ip, arr);
-  return arr.length > RATE_LIMIT;
 }
 
 export const Route = createFileRoute("/api/public/chat-guest")({
@@ -63,18 +58,40 @@ export const Route = createFileRoute("/api/public/chat-guest")({
           return new Response("Missing OPENROUTER_API_KEY", { status: 500 });
         }
 
-        const ip =
-          request.headers.get("cf-connecting-ip") ??
-          request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ??
-          "anon";
-        if (rateLimited(ip)) {
-          return new Response("Too many requests", { status: 429 });
-        }
-
         const body = (await request.json()) as Body;
         const messages = Array.isArray(body.messages) ? body.messages : [];
         if (messages.length === 0) {
           return new Response("Bad request", { status: 400 });
+        }
+
+        // Rate limiting (WP3.10, D7/D14): Postgres fixed-window counters, caps
+        // read from env. The per-IP daily cap is the abuse bound; the
+        // per-session turn cap (when the client sends a session id) bounds a
+        // single runaway conversation. Both fail open on a DB error.
+        const limits = readGuestRateLimits(process.env);
+        const ip = clientIp(request);
+        const today = dayWindowStart(new Date());
+
+        const msgLimit = await enforceRateLimit("guest_msg", ip, today, limits.messagesPerDay);
+        if (!msgLimit.allowed) {
+          return new Response("Daily message limit reached. Sign in to keep chatting.", {
+            status: 429,
+          });
+        }
+
+        if (typeof body.guestSessionId === "string" && body.guestSessionId) {
+          const turnLimit = await enforceRateLimit(
+            "guest_session_turns",
+            body.guestSessionId,
+            SESSION_WINDOW_START,
+            limits.turnsPerSession,
+          );
+          if (!turnLimit.allowed) {
+            return new Response(
+              "This guest conversation has reached its length limit. Start a new one or sign in.",
+              { status: 429 },
+            );
+          }
         }
 
         // Cap guest conversation length to keep cost bounded

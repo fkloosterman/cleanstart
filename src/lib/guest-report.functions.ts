@@ -1,6 +1,9 @@
 import { createServerFn } from "@tanstack/react-start";
+import { getRequest } from "@tanstack/react-start/server";
 import { normalizeProfile, slotValue } from "@/lib/profile/normalize";
 import { composeReportDocument, createCompositionGenerate } from "@/lib/report/composer.server";
+import { dayWindowStart, readGuestRateLimits } from "@/lib/rate-limit";
+import { clientIp, enforceRateLimit } from "@/lib/rate-limit.server";
 import { z } from "zod";
 import type { Json } from "@/integrations/supabase/types";
 
@@ -36,6 +39,28 @@ export const generateGuestReport = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
     if (!OPENROUTER_API_KEY) throw new Error("Missing OPENROUTER_API_KEY");
+
+    // Rate limiting (WP3.10, D7/D14): bound guest report generation per IP per
+    // day *before* the expensive compose call. Fixed-window Postgres counter,
+    // cap from env. Fails open on a DB error (best-effort protection). The
+    // report page caches the result in localStorage and only calls this on an
+    // explicit "generate" click, so a browser restart re-renders the cached
+    // report without spending another slot.
+    const request = getRequest();
+    if (request) {
+      const limits = readGuestRateLimits(process.env);
+      const { allowed } = await enforceRateLimit(
+        "guest_report",
+        clientIp(request),
+        dayWindowStart(new Date()),
+        limits.reportsPerDay,
+      );
+      if (!allowed) {
+        throw new Error(
+          "You've reached today's limit for guest reports. Sign in to generate more.",
+        );
+      }
+    }
 
     const profile = normalizeProfile(data.profile);
 
