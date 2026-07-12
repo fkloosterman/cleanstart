@@ -14,7 +14,7 @@ const FREE_MODEL_FALLBACKS = [
 ];
 
 export function createOpenRouterProvider(openRouterApiKey: string) {
-  const baseURL = process.env.OPENROUTER_URL ?? DEFAULT_OPENROUTER_URL;
+  const baseURL = process.env.OPENROUTER_URL || DEFAULT_OPENROUTER_URL;
   return createOpenAICompatible({
     name: "openrouter",
     baseURL,
@@ -52,6 +52,6 @@ export function createOpenRouterProvider(openRouterApiKey: string) {
  * primary model if the var is unset).
  */
 export function createOpenRouterModel(openRouterApiKey: string) {
-  const modelId = process.env.OPENROUTER_MODEL ?? DEFAULT_OPENROUTER_MODEL;
+  const modelId = process.env.OPENROUTER_MODEL || DEFAULT_OPENROUTER_MODEL;
   return createOpenRouterProvider(openRouterApiKey)(modelId);
 }

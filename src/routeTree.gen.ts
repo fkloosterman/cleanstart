@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as ResourcesRouteImport } from './routes/resources'
 import { Route as ReportRouteImport } from './routes/report'
+import { Route as PrivacyRouteImport } from './routes/privacy'
 import { Route as HistoryRouteImport } from './routes/history'
 import { Route as AboutRouteImport } from './routes/about'
 import { Route as IndexRouteImport } from './routes/index'
@@ -28,6 +29,11 @@ const ResourcesRoute = ResourcesRouteImport.update({
 const ReportRoute = ReportRouteImport.update({
   id: '/report',
   path: '/report',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PrivacyRoute = PrivacyRouteImport.update({
+  id: '/privacy',
+  path: '/privacy',
   getParentRoute: () => rootRouteImport,
 } as any)
 const HistoryRoute = HistoryRouteImport.update({
@@ -75,6 +81,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
   '/history': typeof HistoryRoute
+  '/privacy': typeof PrivacyRoute
   '/report': typeof ReportRoute
   '/resources': typeof ResourcesRoute
   '/api/chat': typeof ApiChatRoute
@@ -87,6 +94,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
   '/history': typeof HistoryRoute
+  '/privacy': typeof PrivacyRoute
   '/report': typeof ReportRoute
   '/resources': typeof ResourcesRoute
   '/api/chat': typeof ApiChatRoute
@@ -100,6 +108,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
   '/history': typeof HistoryRoute
+  '/privacy': typeof PrivacyRoute
   '/report': typeof ReportRoute
   '/resources': typeof ResourcesRoute
   '/api/chat': typeof ApiChatRoute
@@ -114,6 +123,7 @@ export interface FileRouteTypes {
     | '/'
     | '/about'
     | '/history'
+    | '/privacy'
     | '/report'
     | '/resources'
     | '/api/chat'
@@ -126,6 +136,7 @@ export interface FileRouteTypes {
     | '/'
     | '/about'
     | '/history'
+    | '/privacy'
     | '/report'
     | '/resources'
     | '/api/chat'
@@ -138,6 +149,7 @@ export interface FileRouteTypes {
     | '/'
     | '/about'
     | '/history'
+    | '/privacy'
     | '/report'
     | '/resources'
     | '/api/chat'
@@ -151,6 +163,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AboutRoute: typeof AboutRoute
   HistoryRoute: typeof HistoryRoute
+  PrivacyRoute: typeof PrivacyRoute
   ReportRoute: typeof ReportRoute
   ResourcesRoute: typeof ResourcesRoute
   ApiChatRoute: typeof ApiChatRoute
@@ -174,6 +187,13 @@ declare module '@tanstack/react-router' {
       path: '/report'
       fullPath: '/report'
       preLoaderRoute: typeof ReportRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/privacy': {
+      id: '/privacy'
+      path: '/privacy'
+      fullPath: '/privacy'
+      preLoaderRoute: typeof PrivacyRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/history': {
@@ -239,6 +259,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AboutRoute: AboutRoute,
   HistoryRoute: HistoryRoute,
+  PrivacyRoute: PrivacyRoute,
   ReportRoute: ReportRoute,
   ResourcesRoute: ResourcesRoute,
   ApiChatRoute: ApiChatRoute,
