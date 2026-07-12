@@ -18,18 +18,32 @@ const GuestInput = z.object({
 });
 
 const ReportSchema = z.object({
-  readiness_score: z.number(),
-  top_options: z.array(
-    z.object({
-      title: z.string(),
-      why: z.string(),
-      good_fit_when: z.array(z.string()),
-      tradeoffs: z.string(),
-    }),
-  ),
-  key_insights: z.array(z.string()),
-  next_steps: z.array(z.object({ step: z.string(), detail: z.string() })),
-  resources: z.array(z.object({ label: z.string(), description: z.string() })),
+  readiness_score: z.number().optional().default(0),
+  top_options: z
+    .array(
+      z.object({
+        title: z.string(),
+        why: z.string().optional().default(""),
+        // LLMs occasionally return a string instead of an array — coerce gracefully
+        good_fit_when: z
+          .union([z.array(z.string()), z.string()])
+          .transform((v) => (Array.isArray(v) ? v : v ? [v] : []))
+          .optional()
+          .default([]),
+        tradeoffs: z.string().optional().default(""),
+      }),
+    )
+    .optional()
+    .default([]),
+  key_insights: z.array(z.string()).optional().default([]),
+  next_steps: z
+    .array(z.object({ step: z.string(), detail: z.string().optional().default("") }))
+    .optional()
+    .default([]),
+  resources: z
+    .array(z.object({ label: z.string(), description: z.string().optional().default("") }))
+    .optional()
+    .default([]),
 });
 
 export type GuestReport = z.infer<typeof ReportSchema> & {
