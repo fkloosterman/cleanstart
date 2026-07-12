@@ -413,13 +413,15 @@ function FieldRow({
   field,
   profile,
   onEdit,
+  readOnly,
 }: {
   field: SidebarField;
   profile: SessionProfile;
   onEdit: EditFn;
+  readOnly?: boolean;
 }) {
   const [open, setOpen] = useState(false);
-  const editable = slotEditor(field.slot as SlotName).kind !== "readonly";
+  const editable = !readOnly && slotEditor(field.slot as SlotName).kind !== "readonly";
 
   return (
     <div className="flex items-start justify-between gap-2 py-1.5">
@@ -464,18 +466,30 @@ function FieldRow({
 export function ProfileSidebarContent({
   profile,
   onEdit,
+  readOnly,
+  heading = "What we know about you",
 }: {
   profile: SessionProfile;
-  onEdit: EditFn;
+  /** Optional in read-only use (a frozen report snapshot); never called then. */
+  onEdit?: EditFn;
+  /** Hide edit affordances — used for a frozen report's `about_you` (§7.1). */
+  readOnly?: boolean;
+  heading?: string;
 }) {
   const model = buildSidebarModel(profile);
+  const edit: EditFn = onEdit ?? (() => {});
+  // Read-only reports drop the unknown/blank rows — a frozen snapshot has
+  // nothing to prompt the user to fill in.
+  const groups = readOnly
+    ? model.map((g) => ({ ...g, fields: g.fields.filter((f) => f.filled) })).filter((g) => g.fields.length > 0)
+    : model;
   return (
     <div className="flex flex-col gap-5">
       <div className="flex items-center gap-2">
         <Check className="h-4 w-4 text-primary" />
-        <h2 className="text-sm font-semibold text-foreground">What we know about you</h2>
+        <h2 className="text-sm font-semibold text-foreground">{heading}</h2>
       </div>
-      {model.map((group) => (
+      {groups.map((group) => (
         <div key={group.group} className="flex flex-col">
           <h3 className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground/70">
             {group.label}
@@ -483,15 +497,17 @@ export function ProfileSidebarContent({
           <div className="divide-y divide-border/60">
             {group.fields.map((field) => (
               <div key={field.slot} className="group">
-                <FieldRow field={field} profile={profile} onEdit={onEdit} />
+                <FieldRow field={field} profile={profile} onEdit={edit} readOnly={readOnly} />
               </div>
             ))}
           </div>
         </div>
       ))}
-      <p className="text-[11px] leading-relaxed text-muted-foreground/70">
-        Edits you make here are kept as-is — the assistant won't overwrite them.
-      </p>
+      {!readOnly && (
+        <p className="text-[11px] leading-relaxed text-muted-foreground/70">
+          Edits you make here are kept as-is — the assistant won't overwrite them.
+        </p>
+      )}
     </div>
   );
 }

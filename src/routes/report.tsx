@@ -27,11 +27,16 @@ import {
 import { toast } from "sonner";
 import { generateReport, getReport } from "@/lib/report.functions";
 import { generateGuestReport } from "@/lib/guest-report.functions";
+import { ReportDocumentView } from "@/components/report/ReportDocumentView";
+import { parseReportDocument } from "@/lib/report/document";
+import { REPORT_DOCUMENT_FIXTURES, type ReportFixtureKey } from "@/lib/report/fixtures";
 
 const searchSchema = z.object({
   sessionId: z.string().uuid().optional(),
   example: z.coerce.boolean().optional(),
   guest: z.coerce.boolean().optional(),
+  /** Preview a hand-written ReportDocument fixture (WP3.5); dev/demo only. */
+  doc: z.string().optional(),
 });
 
 export const Route = createFileRoute("/report")({
@@ -55,6 +60,8 @@ type ReportRow = {
   next_steps: unknown;
   resources: unknown;
   created_at: string;
+  /** The structured ReportDocument (WP3.5+); null for legacy reports (D5). */
+  document?: unknown;
 };
 
 type Option = { title: string; why: string; good_fit_when: string[]; tradeoffs: string };
@@ -121,8 +128,43 @@ const EXAMPLE: ReportRow = {
   ],
 };
 
+/**
+ * Pick the renderer for a report row: the structured document renderer
+ * (WP3.5) when `document` is present, otherwise the legacy renderer (D5 —
+ * old rows render exactly as before, never regenerated).
+ */
+function ReportSurface({
+  report,
+  isExample,
+  onRegenerate,
+  regenerating,
+}: {
+  report: ReportRow;
+  isExample?: boolean;
+  onRegenerate?: () => void;
+  regenerating?: boolean;
+}) {
+  const document = parseReportDocument(report.document);
+  if (document) {
+    return (
+      <>
+        <PrivacyBanner />
+        <ReportDocumentView document={document} isExample={isExample} />
+      </>
+    );
+  }
+  return (
+    <ReportView
+      report={report}
+      isExample={isExample}
+      onRegenerate={onRegenerate}
+      regenerating={regenerating}
+    />
+  );
+}
+
 function ReportPage() {
-  const { sessionId, example, guest } = Route.useSearch();
+  const { sessionId, example, guest, doc } = Route.useSearch();
   const { user, loading: authLoading } = useAuth();
   const navigate = useNavigate();
   const fetchReport = useServerFn(getReport);
@@ -190,8 +232,22 @@ function ReportPage() {
     }
   };
 
+  // Preview a hand-written ReportDocument fixture (WP3.5) — the composer
+  // doesn't exist yet, so this is how the new renderer is exercised.
+  if (doc && doc in REPORT_DOCUMENT_FIXTURES) {
+    return (
+      <>
+        <PrivacyBanner />
+        <ReportDocumentView
+          document={REPORT_DOCUMENT_FIXTURES[doc as ReportFixtureKey]}
+          isExample
+        />
+      </>
+    );
+  }
+
   if (example) {
-    return <ReportView report={EXAMPLE} isExample />;
+    return <ReportSurface report={EXAMPLE} isExample />;
   }
 
   if (guest) {
@@ -219,7 +275,7 @@ function ReportPage() {
         </div>
       );
     }
-    if (report) return <ReportView report={report} />;
+    if (report) return <ReportSurface report={report} />;
   }
 
   if (!sessionId) {
@@ -295,7 +351,7 @@ function ReportPage() {
     );
   }
 
-  return <ReportView report={report} onRegenerate={handleGenerate} regenerating={generating} />;
+  return <ReportSurface report={report} onRegenerate={handleGenerate} regenerating={generating} />;
 }
 
 function ReportView({
