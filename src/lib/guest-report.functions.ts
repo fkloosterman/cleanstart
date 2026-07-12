@@ -1,11 +1,15 @@
 import { createServerFn } from "@tanstack/react-start";
-import { createModelForPurpose } from "@/lib/ai-gateway.server";
-import { buildReportPrompt } from "@/lib/prompts/report";
-import { generateText } from "ai";
+import { normalizeProfile, slotValue } from "@/lib/profile/normalize";
+import { composeReportDocument, createCompositionGenerate } from "@/lib/report/composer.server";
 import { z } from "zod";
+import type { Json } from "@/integrations/supabase/types";
 
 const GuestInput = z.object({
+  // Accepted for wire compatibility with the old payload; the report is now
+  // composed from `profile` (which the guest client seeds from these upfront, §9).
   tenure: z.enum(["homeowner", "renter", "curious"]).nullable().optional(),
+  /** The guest's localStorage profile (§9) — the composer's primary input. */
+  profile: z.unknown().optional(),
   messages: z
     .array(
       z.object({
@@ -17,50 +21,15 @@ const GuestInput = z.object({
     .max(60),
 });
 
-const ReportSchema = z.object({
-  readiness_score: z.number(),
-  top_options: z.array(
-    z.object({
-      title: z.string(),
-      why: z.string(),
-      good_fit_when: z.array(z.string()),
-      tradeoffs: z.string(),
-    }),
-  ),
-  key_insights: z.array(z.string()),
-  next_steps: z.array(z.object({ step: z.string(), detail: z.string() })),
-  resources: z.array(z.object({ label: z.string(), description: z.string() })),
-});
-
-export type GuestReport = z.infer<typeof ReportSchema> & {
+export type GuestReport = {
   id: string;
   session_id: string;
   persona: string | null;
   created_at: string;
+  // Serialized as JSONB over the wire (like the DB row the auth path returns);
+  // the report page re-parses it with `parseReportDocument` before rendering.
+  document: Json;
 };
-
-function extractJson(raw: string): unknown {
-  let s = raw
-    .replace(/```json\s*/gi, "")
-    .replace(/```\s*/g, "")
-    .trim();
-  const start = s.search(/[{[]/);
-  const end = Math.max(s.lastIndexOf("}"), s.lastIndexOf("]"));
-  if (start === -1 || end === -1) throw new Error("Model did not return JSON");
-  s = s.substring(start, end + 1);
-  try {
-    return JSON.parse(s);
-  } catch {
-    s = s
-      .replace(/,\s*}/g, "}")
-      .replace(/,\s*]/g, "]")
-      // Control characters are matched deliberately: models sometimes emit
-      // them inside JSON strings, where they are invalid.
-      // eslint-disable-next-line no-control-regex
-      .replace(/[\x00-\x1F\x7F]/g, "");
-    return JSON.parse(s);
-  }
-}
 
 export const generateGuestReport = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) => GuestInput.parse(d))
@@ -68,27 +37,22 @@ export const generateGuestReport = createServerFn({ method: "POST" })
     const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
     if (!OPENROUTER_API_KEY) throw new Error("Missing OPENROUTER_API_KEY");
 
-    const transcript = data.messages
-      .map((m) => `${m.role.toUpperCase()}: ${m.content}`)
-      .join("\n\n");
+    const profile = normalizeProfile(data.profile);
 
-    const persona = data.tenure ?? null;
-
-    const model = createModelForPurpose("composition", OPENROUTER_API_KEY);
-
-    const { text } = await generateText({
-      model,
-      system: buildReportPrompt(persona),
-      prompt: `CONVERSATION TRANSCRIPT:\n\n${transcript}\n\nWrite the personalized research summary now as JSON.`,
+    // Guests share the composer's server code but skip the retry — straight to
+    // the deterministic fallback on failure, keeping cost bounded (§9, §6.3).
+    const document = await composeReportDocument({
+      profile,
+      messages: data.messages,
+      generate: createCompositionGenerate(OPENROUTER_API_KEY),
+      allowRetry: false,
     });
-
-    const parsed = ReportSchema.parse(extractJson(text));
 
     return {
       id: "guest",
       session_id: "guest",
-      persona,
+      persona: slotValue(profile, "tenure") ?? data.tenure ?? null,
       created_at: new Date().toISOString(),
-      ...parsed,
+      document: document as unknown as Json,
     } satisfies GuestReport;
   });

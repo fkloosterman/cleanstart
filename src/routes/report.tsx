@@ -191,6 +191,7 @@ function ReportPage() {
     if (typeof window === "undefined") return;
     let payload: {
       tenure: "homeowner" | "renter" | "curious" | null;
+      profile?: unknown;
       messages: { role: "user" | "assistant" | "system"; content: string }[];
     } | null = null;
     try {
