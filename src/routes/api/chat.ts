@@ -1,17 +1,33 @@
-import { createOpenRouterModel } from "@/lib/ai-gateway.server";
-import { buildSystemPrompt, type Persona } from "@/lib/prompts/chat";
+import { createModelForPurpose } from "@/lib/ai-gateway.server";
+import { deriveLane } from "@/lib/lanes/derive";
+import { previewGuardMessage } from "@/lib/preview-guard";
+import { buildContext, buildContextSections, deriveStage } from "@/lib/prompts/context";
+import {
+  CONTEXT_DEBUG_PART_TYPE,
+  promptInspectorEnabled,
+  type ContextDebugData,
+} from "@/lib/prompts/inspector";
+import { extractProfilePatches } from "@/lib/profile/extractor";
+import { createExtractionGenerate } from "@/lib/profile/extractor.server";
+import { retrieveGrounding } from "@/lib/content/retrieval.server";
+import { normalizeProfile, slotValue } from "@/lib/profile/normalize";
+import { applyPatches } from "@/lib/profile/patches";
+import { readiness } from "@/lib/profile/readiness";
+import { reportGate } from "@/lib/profile/readiness-gate";
+import { PROFILE_PATCH_PART_TYPE } from "@/lib/profile/stream";
 import { createClient } from "@supabase/supabase-js";
 import { createFileRoute } from "@tanstack/react-router";
 import {
   convertToModelMessages,
+  createUIMessageStream,
+  createUIMessageStreamResponse,
   streamText,
   type UIMessage,
 } from "ai";
-import type { Database } from "@/integrations/supabase/types";
+import type { Database, Json } from "@/integrations/supabase/types";
 
 type Body = {
   sessionId?: string;
-  persona?: Persona;
   messages?: UIMessage[];
 };
 
@@ -26,6 +42,11 @@ export const Route = createFileRoute("/api/chat")({
   server: {
     handlers: {
       POST: async ({ request }) => {
+        const guardMessage = previewGuardMessage(process.env);
+        if (guardMessage) {
+          return new Response(guardMessage, { status: 503 });
+        }
+
         const auth = request.headers.get("authorization");
         if (!auth?.startsWith("Bearer ")) {
           return new Response("Unauthorized", { status: 401 });
@@ -57,10 +78,11 @@ export const Route = createFileRoute("/api/chat")({
           return new Response("Bad request", { status: 400 });
         }
 
-        // Verify session ownership
+        // Verify session ownership; load the current profile in the same
+        // round-trip so the per-turn extractor can patch onto it (WP1.5).
         const { data: session, error: sessErr } = await supabase
           .from("sessions")
-          .select("id, title, user_id")
+          .select("id, title, user_id, profile, readiness_reached_at")
           .eq("id", sessionId)
           .maybeSingle();
         if (sessErr || !session || session.user_id !== userId) {
@@ -68,8 +90,9 @@ export const Route = createFileRoute("/api/chat")({
         }
 
         const lastUser = [...messages].reverse().find((m) => m.role === "user");
+        const lastUserText = lastUser ? textOf(lastUser) : "";
         if (lastUser) {
-          const content = textOf(lastUser);
+          const content = lastUserText;
           if (content) {
             await supabase.from("messages").insert({
               session_id: sessionId,
@@ -90,41 +113,120 @@ export const Route = createFileRoute("/api/chat")({
           }
         }
 
-        const assistantTurnCount = messages.filter((m) => m.role === "assistant").length;
-        const system = buildSystemPrompt({
-          persona: body.persona ?? null,
-          assistantTurnCount,
-        });
+        // The profile the extractor patches onto — normalized on read, so an
+        // old or junk-shaped column heals rather than blocks (§11).
+        const currentProfile = normalizeProfile(session.profile);
 
-        const model = createOpenRouterModel(OPENROUTER_API_KEY);
+        // The lane is derived from the motivation vector (WP2.1); stage from
+        // information sufficiency and the ratcheted report gate (WP1.7) — no
+        // more persona enum or assistant-turn counting.
+        const lane = deriveLane(slotValue(currentProfile, "motivation_weights"));
+        const gate = reportGate(currentProfile, session.readiness_reached_at);
+        const stage = deriveStage(currentProfile, lane.framing, { reportGateOpen: gate.open });
+        // Grounding retrieval (WP3.4): the top library components for this
+        // profile feed the prompt so the agent cites and shows only library
+        // material. Resilient — an empty result simply omits the grounding block.
+        const retrieved = await retrieveGrounding(currentProfile);
+        const contextInput = { profile: currentProfile, lane, stage, retrieved };
+        const system = buildContext(contextInput);
 
-        const result = streamText({
-          model,
-          system,
-          messages: await convertToModelMessages(messages),
-        });
+        // Dev prompt inspector (off in prod): stream the assembled prompt,
+        // section by section, so a developer can see what the model was told.
+        const inspector: ContextDebugData | null = promptInspectorEnabled(process.env)
+          ? {
+              meta: {
+                lanePrimary: lane.primary,
+                laneFraming: lane.framing,
+                laneMixed: lane.mixed,
+                stage,
+              },
+              sections: buildContextSections(contextInput),
+            }
+          : null;
 
-        return result.toUIMessageStreamResponse({
+        const model = createModelForPurpose("chat", OPENROUTER_API_KEY);
+        const modelMessages = await convertToModelMessages(messages);
+        const extract = createExtractionGenerate(OPENROUTER_API_KEY);
+
+        const stream = createUIMessageStream({
           originalMessages: messages,
-          onFinish: async ({ responseMessage }) => {
-            const text = textOf(responseMessage);
-            if (text) {
+          execute: async ({ writer }) => {
+            // Dev-only: hand the client the assembled prompt up front (transient,
+            // never persisted). No-op when the inspector is disabled.
+            if (inspector) {
+              writer.write({ type: CONTEXT_DEBUG_PART_TYPE, data: inspector, transient: true });
+            }
+
+            const result = streamText({ model, system, messages: modelMessages });
+            // Forward the reply as it streams — zero added time-to-first-token.
+            writer.merge(result.toUIMessageStream());
+
+            // Everything below runs only once the reply has fully streamed. A
+            // stream failure is already surfaced to the client via the merge;
+            // bail out rather than double-report or extract from a broken turn.
+            let assistantText = "";
+            try {
+              assistantText = (await result.text).trim();
+            } catch (err) {
+              console.error("[/api/chat] reply stream failed:", err);
+              return;
+            }
+            if (assistantText) {
               await supabase.from("messages").insert({
                 session_id: sessionId,
                 role: "assistant",
-                content: text,
+                content: assistantText,
               });
               await supabase
                 .from("sessions")
                 .update({ updated_at: new Date().toISOString() })
                 .eq("id", sessionId);
             }
+
+            // Per-turn extraction (WP1.4). Never throws and never blocks the
+            // reply the user already saw; a bad model response yields [].
+            if (!lastUserText) return;
+            const patches = await extractProfilePatches(
+              currentProfile,
+              { user: lastUserText, assistant: assistantText || undefined },
+              extract,
+            );
+            if (patches.length === 0) return;
+
+            const { profile: updated } = applyPatches(currentProfile, patches);
+            // Ratchet (§4.5): stamp the first turn readiness is reached so a
+            // later edit that drops a required slot can't re-lock the report.
+            // Once set, it is never cleared or moved.
+            const reachedNow =
+              !session.readiness_reached_at && readiness(updated).ready
+                ? new Date().toISOString()
+                : null;
+            const { error: profileErr } = await supabase
+              .from("sessions")
+              // JSONB column; the tolerant slot envelopes carry unknown-indexed
+              // values that don't line up with the generated `Json` type, so
+              // cast at this boundary (round-tripped by normalizeProfile on read).
+              .update({
+                profile: updated as unknown as Json,
+                ...(reachedNow ? { readiness_reached_at: reachedNow } : {}),
+              })
+              .eq("id", sessionId);
+            if (profileErr) {
+              console.error("[/api/chat] profile persist failed, skipping:", profileErr);
+              return;
+            }
+            // Ride the same stream as a transient side-channel so a live
+            // sidebar (WP1.6) can reflect the update without a reload; it is
+            // not part of the message and is never persisted client-side.
+            writer.write({ type: PROFILE_PATCH_PART_TYPE, data: { patches }, transient: true });
           },
           onError: (error) => {
             console.error("[/api/chat] stream error", error);
             return error instanceof Error ? error.message : "Stream error";
           },
         });
+
+        return createUIMessageStreamResponse({ stream });
       },
     },
   },

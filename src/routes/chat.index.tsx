@@ -1,10 +1,39 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useServerFn } from "@tanstack/react-start";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport, type UIMessage } from "ai";
 import { useAuth } from "@/hooks/use-auth";
 import { supabase } from "@/integrations/supabase/client";
 import { createSession } from "@/lib/sessions";
+import { profileFromUpfront, type UpfrontInput } from "@/lib/profile/upfront";
+import { applyPatches } from "@/lib/profile/patches";
+import { getPresets, type StarterPreset } from "@/lib/content/presets.functions";
+import { emptyProfile } from "@/lib/profile/normalize";
+import { PROFILE_PATCH_PART_TYPE, readProfilePatchData } from "@/lib/profile/stream";
+import {
+  CONTEXT_DEBUG_PART_TYPE,
+  readContextDebugData,
+  type ContextDebugData,
+} from "@/lib/prompts/inspector";
+import { PromptInspector } from "@/components/PromptInspector";
+import {
+  GUEST_CHAT_KEY,
+  GUEST_TENURE_KEY,
+  GUEST_LOCATION_KEY,
+  GUEST_PROFILE_KEY,
+  GUEST_READINESS_KEY,
+  readGuestProfile,
+  writeGuestProfile,
+  readGuestReadinessReachedAt,
+  writeGuestReadinessReachedAt,
+  getGuestSessionId,
+  clearGuestState,
+} from "@/lib/guest-storage";
+import { missingSlotLabels } from "@/lib/profile/readiness-gate";
+import { useSessionProfile } from "@/hooks/use-session-profile";
+import { useReadinessGate } from "@/hooks/use-readiness-gate";
+import { ProfilePanel } from "@/components/ProfileSidebar";
 import { PrivacyBanner } from "@/components/PrivacyBanner";
 import {
   Conversation,
@@ -41,9 +70,13 @@ export const Route = createFileRoute("/chat/")({
   component: ChatPage,
 });
 
-const STORAGE_KEY = "cleanstart.chat.v1";
-const TENURE_KEY = "cleanstart.tenure.v1";
-const LOCATION_KEY = "cleanstart.location.v1";
+/** The upfront steps as the profile mapper consumes them (§4.8). */
+function toUpfrontInput(tenure: Tenure | null, location: Location | null): UpfrontInput {
+  return {
+    tenure,
+    location: location ? { zip: location.zip, city: location.city, state: location.state } : null,
+  };
+}
 
 type Tenure = "homeowner" | "renter" | "curious";
 type Location = {
@@ -92,26 +125,12 @@ const STATE_UTILITY: Record<string, string> = {
   KY: "LG&E",
 };
 
-const CHIPS: Record<Tenure, { category: string; prompt: string }[]> = {
-  homeowner: [
-    { category: "Solar", prompt: "Is solar worth it for my home?" },
-    { category: "Heat pumps", prompt: "How does a heat pump compare to my gas furnace?" },
-    { category: "EVs", prompt: "What EV tax credits can I get as a homeowner?" },
-    { category: "Efficiency", prompt: "What efficiency upgrades have the best payback?" },
-  ],
-  renter: [
-    { category: "Community solar", prompt: "How does community solar work for renters?" },
-    { category: "Rebates", prompt: "What energy rebates are available to renters?" },
-    { category: "EVs", prompt: "What EV tax credits are available to me?" },
-    { category: "Efficiency", prompt: "How can I lower my energy bill as a renter?" },
-  ],
-  curious: [
-    { category: "Solar", prompt: "Give me a plain-language overview of solar." },
-    { category: "Heat pumps", prompt: "What is a heat pump and should I care?" },
-    { category: "EVs", prompt: "What EV tax credits are available in 2025?" },
-    { category: "Efficiency", prompt: "What are the easiest ways to cut my energy bill?" },
-  ],
-};
+/** The stepper's tenure maps to the content preset targeting (owner/renter). */
+function presetTenure(tenure: Tenure): "owner" | "renter" | null {
+  if (tenure === "homeowner") return "owner";
+  if (tenure === "renter") return "renter";
+  return null; // "curious" — show only general (untargeted) presets
+}
 
 function ChatPage() {
   const navigate = useNavigate();
@@ -172,26 +191,65 @@ function ChatPage() {
   const [input, setInput] = useState("");
   const [creatingSession, setCreatingSession] = useState(false);
 
+  // Starter presets (WP3.2, §3.6) from the content library, filtered to the
+  // chosen tenure. Replaces the hardcoded CHIPS. Empty until a tenure is
+  // picked, or if the fetch fails — the opening screen keeps its text input.
+  const [presets, setPresets] = useState<StarterPreset[]>([]);
+  const fetchPresets = useServerFn(getPresets);
+  useEffect(() => {
+    if (tenure === null) {
+      setPresets([]);
+      return;
+    }
+    let cancelled = false;
+    fetchPresets({ data: { tenure: presetTenure(tenure) } })
+      .then((p) => !cancelled && setPresets(p))
+      .catch(() => !cancelled && setPresets([]));
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tenure]);
+
+  // Reactive guest profile (WP1.6): starts empty and is hydrated from
+  // localStorage after mount (below), kept in sync by the upfront stepper
+  // and per-turn extraction (onData), and edited by the sidebar. The hook
+  // persists every change to localStorage via writeGuestProfile.
+  const profileStore = useSessionProfile(emptyProfile(), writeGuestProfile);
+
+  // Guest readiness ratchet (WP1.7, §4.5): the localStorage twin of
+  // sessions.readiness_reached_at. Hydrated from storage after mount (below),
+  // stamped the first time the gate opens, and cleared on start-over.
+  const [reachedAt, setReachedAt] = useState<string | null>(null);
+  // Assembled system prompt for the last turn — set only when the server
+  // streams it (dev prompt inspector, off in prod).
+  const [contextDebug, setContextDebug] = useState<ContextDebugData | null>(null);
+  const stampReadiness = useCallback((at: string) => {
+    setReachedAt(at);
+    writeGuestReadinessReachedAt(at);
+  }, []);
+  const gate = useReadinessGate(profileStore.profile, reachedAt, stampReadiness);
+
   useEffect(() => {
     if (typeof window === "undefined") {
       setInitialMessages([]);
       return;
     }
     try {
-      const raw = window.localStorage.getItem(STORAGE_KEY);
+      const raw = window.localStorage.getItem(GUEST_CHAT_KEY);
       const parsed = raw ? (JSON.parse(raw) as UIMessage[]) : [];
       setInitialMessages(Array.isArray(parsed) ? parsed : []);
     } catch {
       setInitialMessages([]);
     }
     try {
-      const t = window.localStorage.getItem(TENURE_KEY) as Tenure | null;
+      const t = window.localStorage.getItem(GUEST_TENURE_KEY) as Tenure | null;
       if (t === "homeowner" || t === "renter" || t === "curious") setTenure(t);
     } catch {
       // ignore
     }
     try {
-      const raw = window.localStorage.getItem(LOCATION_KEY);
+      const raw = window.localStorage.getItem(GUEST_LOCATION_KEY);
       if (raw) {
         const parsed = JSON.parse(raw) as Location | { skipped: true };
         if ("zip" in parsed) setLocation(parsed);
@@ -200,13 +258,25 @@ function ChatPage() {
     } catch {
       // ignore
     }
+    // Rehydrate the readiness ratchet so a reload keeps the report unlocked.
+    setReachedAt(readGuestReadinessReachedAt());
   }, []);
 
   const transport = useMemo(
     () =>
       new DefaultChatTransport({
         api: "/api/public/chat-guest",
-        body: () => ({ persona: null, tenure, location }),
+        // Read the profile fresh at send time so it carries any patches
+        // applied since mount (WP1.5); the server patches onto it and
+        // streams the delta back (see onData below). guestSessionId keys the
+        // per-session turn cap (WP3.10, D7).
+        body: () => ({
+          persona: null,
+          tenure,
+          location,
+          profile: readGuestProfile(),
+          guestSessionId: getGuestSessionId(),
+        }),
       }),
     [tenure, location],
   );
@@ -227,16 +297,61 @@ function ChatPage() {
     onError(err) {
       toast.error(err.message || "Something went wrong");
     },
+    // The server streams a transient `data-profile-patch` after each reply
+    // (WP1.5); apply it onto the stored profile so it accumulates across the
+    // conversation. `applyPatches` validates and enforces edited-wins, so a
+    // malformed payload can never corrupt the profile.
+    onData(part) {
+      if (part.type === CONTEXT_DEBUG_PART_TYPE) {
+        setContextDebug(readContextDebugData(part.data));
+        return;
+      }
+      if (part.type !== PROFILE_PATCH_PART_TYPE) return;
+      const patches = readProfilePatchData(part.data);
+      if (patches.length === 0) return;
+      // Lift into React state (and persist) so the sidebar re-renders live.
+      profileStore.applyProfilePatches(patches);
+    },
   });
 
+  // Hydrate the reactive profile from localStorage once on the client. The
+  // transport still reads localStorage directly at send time, so this only
+  // drives the sidebar UI; state and storage stay in sync via the hook.
   useEffect(() => {
-    if (typeof window === "undefined" || initialMessages === null) return;
+    if (typeof window === "undefined") return;
+    profileStore.setProfile(readGuestProfile());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Persist the guest transcript — but only while logged out. Once signed in,
+  // the guest→signup migration (useGuestMigration, mounted in AppShell) owns
+  // this conversation: it copies it to the DB and clears local state, so this
+  // page must not re-write it back to localStorage after that.
+  useEffect(() => {
+    if (typeof window === "undefined" || initialMessages === null || user) return;
     try {
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(messages));
+      window.localStorage.setItem(GUEST_CHAT_KEY, JSON.stringify(messages));
     } catch {
       // ignore
     }
-  }, [messages, initialMessages]);
+  }, [messages, initialMessages, user]);
+
+  // Guests: keep the localStorage profile's upfront slots in sync with the
+  // stepper. Signed-in users' profile lives in sessions.profile (seeded at
+  // session creation in handleSend). The upfront patches are applied *onto*
+  // the stored profile — not a fresh one — so per-turn extraction patches
+  // (WP1.5, applied in onData) accumulate rather than being reset each render.
+  useEffect(() => {
+    if (typeof window === "undefined" || initialMessages === null || user) return;
+    if (tenure === null && location === null) {
+      profileStore.setProfile(emptyProfile());
+      return;
+    }
+    // Apply the upfront patches onto the current profile (not a fresh one) so
+    // extraction patches accumulated this session survive; the hook persists.
+    profileStore.setProfile((prev) => profileFromUpfront(toUpfrontInput(tenure, location), prev));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tenure, location, user, initialMessages]);
 
   useEffect(() => {
     if (status === "ready") inputRef.current?.focus();
@@ -251,7 +366,7 @@ function ChatPage() {
   const pickTenure = (t: Tenure) => {
     setTenure(t);
     try {
-      window.localStorage.setItem(TENURE_KEY, t);
+      window.localStorage.setItem(GUEST_TENURE_KEY, t);
     } catch {
       // ignore
     }
@@ -261,9 +376,12 @@ function ChatPage() {
     setTenure(null);
     setZipStepDone(false);
     setLocation(null);
+    setReachedAt(null);
     try {
-      window.localStorage.removeItem(TENURE_KEY);
-      window.localStorage.removeItem(LOCATION_KEY);
+      window.localStorage.removeItem(GUEST_TENURE_KEY);
+      window.localStorage.removeItem(GUEST_LOCATION_KEY);
+      window.localStorage.removeItem(GUEST_PROFILE_KEY);
+      window.localStorage.removeItem(GUEST_READINESS_KEY);
     } catch {
       // ignore
     }
@@ -273,7 +391,7 @@ function ChatPage() {
     setZipStepDone(false);
     setLocation(null);
     try {
-      window.localStorage.removeItem(LOCATION_KEY);
+      window.localStorage.removeItem(GUEST_LOCATION_KEY);
     } catch {
       // ignore
     }
@@ -290,26 +408,21 @@ function ChatPage() {
     setTenure(null);
     setLocation(null);
     setZipStepDone(false);
-    try {
-      window.localStorage.removeItem(STORAGE_KEY);
-      window.localStorage.removeItem(TENURE_KEY);
-      window.localStorage.removeItem(LOCATION_KEY);
-    } catch {
-      // ignore
-    }
+    setReachedAt(null);
+    clearGuestState();
   };
 
   const handleLocationResolved = (loc: Location | null) => {
     if (loc) {
       setLocation(loc);
       try {
-        window.localStorage.setItem(LOCATION_KEY, JSON.stringify(loc));
+        window.localStorage.setItem(GUEST_LOCATION_KEY, JSON.stringify(loc));
       } catch {
         // ignore
       }
     } else {
       try {
-        window.localStorage.setItem(LOCATION_KEY, JSON.stringify({ skipped: true }));
+        window.localStorage.setItem(GUEST_LOCATION_KEY, JSON.stringify({ skipped: true }));
       } catch {
         // ignore
       }
@@ -318,7 +431,7 @@ function ChatPage() {
     setTimeout(() => inputRef.current?.focus(), 0);
   };
 
-  const handleSend = async (text: string) => {
+  const handleSend = async (text: string, presetPatches?: unknown[]) => {
     const trimmed = text.trim();
     if (!trimmed || isBusy || creatingSession) return;
     const effectiveTenure = tenure ?? "curious";
@@ -327,10 +440,16 @@ function ChatPage() {
 
     if (user) {
       // Signed in: create a real session and hand off the first message to
-      // the persisted chat page instead of the ephemeral guest flow.
+      // the persisted chat page instead of the ephemeral guest flow. Seed
+      // the session profile with the upfront slots (§4.8) plus any preset
+      // warm-start patches, so both are populated before the first answer.
       setCreatingSession(true);
       try {
-        const sessionId = await createSession(user.id);
+        let initialProfile = profileFromUpfront(toUpfrontInput(effectiveTenure, location));
+        if (presetPatches?.length) {
+          initialProfile = applyPatches(initialProfile, presetPatches).profile;
+        }
+        const sessionId = await createSession(user.id, initialProfile);
         navigate({
           to: "/chat/$sessionId",
           params: { sessionId },
@@ -343,8 +462,24 @@ function ChatPage() {
       return;
     }
 
+    // Guest: persist the preset warm-start onto the localStorage profile
+    // *synchronously* before sending — the transport reads readGuestProfile()
+    // at send time, and React state updates are batched, so we can't rely on
+    // profileStore alone to have flushed. setProfile also updates the sidebar.
+    if (presetPatches?.length) {
+      const patched = applyPatches(readGuestProfile(), presetPatches).profile;
+      writeGuestProfile(patched);
+      profileStore.setProfile(patched);
+    }
+
     sendMessage({ text: trimmed });
     setInput("");
+  };
+
+  // A preset click sends its first message AND warm-starts the profile with
+  // its patches (§3.6), so the first agent turn already has real context.
+  const handlePickPreset = (preset: StarterPreset) => {
+    handleSend(preset.first_message, preset.profile_patches);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -355,13 +490,12 @@ function ChatPage() {
   };
 
   const hasMessages = messages.length > 0;
-  const step: 1 | 2 | 3 | 4 = hasMessages
-    ? 4
-    : !tenure
-      ? 1
-      : !zipStepDone
-        ? 2
-        : 3;
+  const step: 1 | 2 | 3 | 4 = hasMessages ? 4 : !tenure ? 1 : !zipStepDone ? 2 : 3;
+  // The sidebar shows for guests once the conversation is underway. A guest
+  // who signs in mid-conversation is migrated to a persisted session (below),
+  // which renders its own DB-backed sidebar — so on this page the panel is
+  // guest-only, and there's no doomed local sidebar to keep alive.
+  const showProfile = step === 4 && !user;
 
   if (authLoading || !recentSessionChecked || creatingSession) {
     return (
@@ -374,167 +508,208 @@ function ChatPage() {
   return (
     <>
       <PrivacyBanner />
-      <div className="mx-auto flex h-[calc(100vh-12rem)] min-h-[500px] max-w-3xl flex-col px-4 pb-4 pt-4">
-        {user && recentSession && step !== 4 && (
-          <div className="mb-4 flex flex-col gap-3 rounded-xl border border-primary/30 bg-primary-light/30 p-4 sm:flex-row sm:items-center sm:justify-between">
-            <div className="min-w-0">
-              <p className="text-sm font-medium text-foreground">Welcome back</p>
-              <p className="truncate text-xs text-muted-foreground">
-                Continue "{recentSession.title}", or start something new below.
-              </p>
-            </div>
-            <div className="flex shrink-0 gap-2">
-              <Button size="sm" onClick={goToRecentSession}>
-                Continue chat
-              </Button>
-              <Button size="sm" variant="outline" onClick={startBlankSession}>
-                Start new chat
-              </Button>
-            </div>
-          </div>
+      <div
+        className={cn(
+          "mx-auto flex w-full flex-col px-4 lg:flex-row lg:gap-4",
+          showProfile ? "max-w-6xl" : "max-w-3xl",
         )}
-        {step === 4 ? (
-          <>
-            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-              <div className="flex flex-wrap items-center gap-2">
-                {tenure && (
-                  <span className="inline-flex items-center gap-1.5 rounded-full border border-primary/40 bg-primary-light/40 px-3 py-1 text-xs font-medium text-primary-dark">
-                    {(() => {
-                      const Icon = TENURE_META[tenure].icon;
-                      return <Icon className="h-3.5 w-3.5" />;
-                    })()}
-                    {TENURE_META[tenure].label}
-                  </span>
-                )}
-                {location && (
-                  <span className="inline-flex items-center gap-1.5 rounded-full border border-primary/40 bg-primary-light/40 px-3 py-1 text-xs font-medium text-primary-dark">
-                    <MapPin className="h-3.5 w-3.5" />
-                    {location.city}, {location.state}
-                  </span>
-                )}
-                <Button variant="ghost" size="sm" onClick={handleStartOver}>
-                  <RotateCcw className="mr-1 h-4 w-4" /> Start over
+      >
+        <div className="flex h-[calc(100vh-12rem)] min-h-[500px] w-full max-w-3xl flex-1 flex-col pb-4 pt-4 lg:order-1">
+          {user && recentSession && step !== 4 && (
+            <div className="mb-4 flex flex-col gap-3 rounded-xl border border-primary/30 bg-primary-light/30 p-4 sm:flex-row sm:items-center sm:justify-between">
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-foreground">Welcome back</p>
+                <p className="truncate text-xs text-muted-foreground">
+                  Continue "{recentSession.title}", or start something new below.
+                </p>
+              </div>
+              <div className="flex shrink-0 gap-2">
+                <Button size="sm" onClick={goToRecentSession}>
+                  Continue chat
+                </Button>
+                <Button size="sm" variant="outline" onClick={startBlankSession}>
+                  Start new chat
                 </Button>
               </div>
-              {messages.filter((m) => m.role === "assistant").length >= 3 && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => {
-                    try {
-                      const transcript = messages
-                        .map((m) => ({
-                          role: m.role,
-                          content: m.parts
-                            .map((p) => (p.type === "text" ? p.text : ""))
-                            .join(""),
-                        }))
-                        .filter((m) => m.content.trim().length > 0);
-                      window.sessionStorage.setItem(
-                        "cleanstart.guest-report.v1",
-                        JSON.stringify({ tenure, location, messages: transcript }),
-                      );
-                    } catch {
-                      // ignore
-                    }
-                    navigate({ to: "/report", search: { guest: true } });
-                  }}
-                >
-                  <FileText className="mr-1 h-4 w-4" /> Generate report
-                </Button>
-              )}
             </div>
-            <Conversation className="flex-1">
-              <ConversationContent className="px-0">
-                <div className="flex flex-col gap-6">
-                  {messages.map((m) => {
-                    const isUser = m.role === "user";
-                    const text = m.parts
-                      .map((p) => (p.type === "text" ? p.text : ""))
-                      .join("");
-                    return (
-                      <div
-                        key={m.id}
-                        className={cn(
-                          "flex flex-col gap-1",
-                          isUser ? "items-end" : "items-start",
-                        )}
-                      >
-                        <span className="px-1 text-xs text-muted-foreground">
-                          {isUser ? "You" : "Clean Start"}
-                        </span>
-                        <div
-                          className={cn(
-                            "max-w-[85%] rounded-2xl px-4 py-3 text-sm",
-                            isUser
-                              ? "rounded-br-sm bg-primary text-primary-foreground"
-                              : "rounded-bl-sm border border-border bg-card text-foreground",
-                          )}
-                        >
-                          {isUser ? (
-                            <p className="whitespace-pre-wrap">{text}</p>
-                          ) : (
-                            <MessageResponse>{text}</MessageResponse>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
-                  {status === "submitted" && (
-                    <div className="flex flex-col gap-1 items-start">
-                      <span className="px-1 text-xs text-muted-foreground">Clean Start</span>
-                      <div className="max-w-[85%] rounded-2xl rounded-bl-sm border border-border bg-card px-4 py-3">
-                        <TypingDots />
-                      </div>
-                    </div>
+          )}
+          {step === 4 ? (
+            <>
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  {tenure && (
+                    <span className="inline-flex items-center gap-1.5 rounded-full border border-primary/40 bg-primary-light/40 px-3 py-1 text-xs font-medium text-primary-dark">
+                      {(() => {
+                        const Icon = TENURE_META[tenure].icon;
+                        return <Icon className="h-3.5 w-3.5" />;
+                      })()}
+                      {TENURE_META[tenure].label}
+                    </span>
+                  )}
+                  {location && (
+                    <span className="inline-flex items-center gap-1.5 rounded-full border border-primary/40 bg-primary-light/40 px-3 py-1 text-xs font-medium text-primary-dark">
+                      <MapPin className="h-3.5 w-3.5" />
+                      {location.city}, {location.state}
+                    </span>
+                  )}
+                  <Button variant="ghost" size="sm" onClick={handleStartOver}>
+                    <RotateCcw className="mr-1 h-4 w-4" /> Start over
+                  </Button>
+                </div>
+                <div className="flex items-center gap-2">
+                  {contextDebug ? <PromptInspector data={contextDebug} /> : null}
+                  {gate.open ? (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        try {
+                          const transcript = messages
+                            .map((m) => ({
+                              role: m.role,
+                              content: m.parts
+                                .map((p) => (p.type === "text" ? p.text : ""))
+                                .join(""),
+                            }))
+                            .filter((m) => m.content.trim().length > 0);
+                          window.sessionStorage.setItem(
+                            "cleanstart.guest-report.v1",
+                            JSON.stringify({
+                              tenure,
+                              location,
+                              // The composer's primary input (§9); read fresh so it
+                              // carries every patch accumulated this session.
+                              profile: readGuestProfile(),
+                              messages: transcript,
+                            }),
+                          );
+                        } catch {
+                          // ignore
+                        }
+                        navigate({ to: "/report", search: { guest: true } });
+                      }}
+                    >
+                      <FileText className="mr-1 h-4 w-4" /> Generate report
+                    </Button>
+                  ) : (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled
+                      title={`Still need: ${missingSlotLabels(gate.missing).join(", ")}`}
+                    >
+                      <FileText className="mr-1 h-4 w-4" /> Generate report
+                    </Button>
                   )}
                 </div>
-              </ConversationContent>
-              <ConversationScrollButton />
-            </Conversation>
-          </>
-        ) : (
-          <div className="flex-1 overflow-y-auto">
-            {step === 1 && <TenureStep onPick={pickTenure} />}
-            {step === 2 && <ZipStep onDone={handleLocationResolved} />}
-            {step === 3 && (
-              <ChipsStep
-                tenure={tenure!}
-                location={location}
-                onPick={handleSend}
-                onChangeTenure={resetTenure}
-                onChangeZip={resetZip}
-                disabled={isBusy}
-              />
-            )}
-          </div>
-        )}
+              </div>
+              {/* What still gates the report (WP1.7) — visible, not just a tooltip. */}
+              {!gate.open && (
+                <p className="mb-3 text-center text-xs text-muted-foreground">
+                  Your report unlocks once we know:{" "}
+                  <span className="font-medium text-foreground">
+                    {missingSlotLabels(gate.missing).join(", ")}
+                  </span>
+                </p>
+              )}
+              <Conversation className="flex-1">
+                <ConversationContent className="px-0">
+                  <div className="flex flex-col gap-6">
+                    {messages.map((m) => {
+                      const isUser = m.role === "user";
+                      const text = m.parts.map((p) => (p.type === "text" ? p.text : "")).join("");
+                      return (
+                        <div
+                          key={m.id}
+                          className={cn(
+                            "flex flex-col gap-1",
+                            isUser ? "items-end" : "items-start",
+                          )}
+                        >
+                          <span className="px-1 text-xs text-muted-foreground">
+                            {isUser ? "You" : "Clean Start"}
+                          </span>
+                          <div
+                            className={cn(
+                              "max-w-[85%] rounded-2xl px-4 py-3 text-sm",
+                              isUser
+                                ? "rounded-br-sm bg-primary text-primary-foreground"
+                                : "rounded-bl-sm border border-border bg-card text-foreground",
+                            )}
+                          >
+                            {isUser ? (
+                              <p className="whitespace-pre-wrap">{text}</p>
+                            ) : (
+                              <MessageResponse>{text}</MessageResponse>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                    {status === "submitted" && (
+                      <div className="flex flex-col gap-1 items-start">
+                        <span className="px-1 text-xs text-muted-foreground">Clean Start</span>
+                        <div className="max-w-[85%] rounded-2xl rounded-bl-sm border border-border bg-card px-4 py-3">
+                          <TypingDots />
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </ConversationContent>
+                <ConversationScrollButton />
+              </Conversation>
+            </>
+          ) : (
+            <div className="flex-1 overflow-y-auto">
+              {step === 1 && <TenureStep onPick={pickTenure} />}
+              {step === 2 && <ZipStep onDone={handleLocationResolved} />}
+              {step === 3 && (
+                <ChipsStep
+                  tenure={tenure!}
+                  location={location}
+                  presets={presets}
+                  onPick={handlePickPreset}
+                  onChangeTenure={resetTenure}
+                  onChangeZip={resetZip}
+                  disabled={isBusy}
+                />
+              )}
+            </div>
+          )}
 
-        <div className="mt-3 border-t border-border pt-3">
-          <div className="relative">
-            <textarea
-              ref={inputRef}
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={handleKeyDown}
-              rows={1}
-              placeholder="Ask anything about clean energy…"
-              className="w-full resize-none rounded-full border border-border bg-card py-3 pl-5 pr-14 text-sm shadow-sm placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
-            />
-            <button
-              type="button"
-              onClick={() => handleSend(input)}
-              disabled={!input.trim() || isBusy}
-              aria-label="Send message"
-              className="absolute right-1.5 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full bg-primary text-primary-foreground transition hover:bg-primary-dark disabled:opacity-40"
-            >
-              <ArrowUp className="h-4 w-4" />
-            </button>
+          <div className="mt-3 border-t border-border pt-3">
+            <div className="relative">
+              <textarea
+                ref={inputRef}
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={handleKeyDown}
+                rows={1}
+                placeholder="Ask anything about clean energy…"
+                className="w-full resize-none rounded-full border border-border bg-card py-3 pl-5 pr-14 text-sm shadow-sm placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+              />
+              <button
+                type="button"
+                onClick={() => handleSend(input)}
+                disabled={!input.trim() || isBusy}
+                aria-label="Send message"
+                className="absolute right-1.5 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full bg-primary text-primary-foreground transition hover:bg-primary-dark disabled:opacity-40"
+              >
+                <ArrowUp className="h-4 w-4" />
+              </button>
+            </div>
+            <p className="mt-2 text-center text-xs text-muted-foreground">
+              No account required · your conversations stay private
+            </p>
           </div>
-          <p className="mt-2 text-center text-xs text-muted-foreground">
-            No account required · your conversations stay private
-          </p>
         </div>
+        {showProfile && (
+          <ProfilePanel
+            profile={profileStore.profile}
+            onEdit={profileStore.applyProfilePatches}
+            className="mt-4 max-h-[calc(100vh-12rem)] lg:order-2"
+          />
+        )}
       </div>
     </>
   );
@@ -543,7 +718,7 @@ function ChatPage() {
 function StepDots({ active }: { active: 1 | 2 | 3 }) {
   const dots: (1 | 2 | 3)[] = [1, 2, 3];
   return (
-    <div className="mb-6 flex items-center justify-center gap-2">
+    <div className="mb-4 flex items-center justify-center gap-2">
       {dots.map((n) => {
         const isActive = n === active;
         const isDone = n < active;
@@ -563,9 +738,19 @@ function StepDots({ active }: { active: 1 | 2 | 3 }) {
 
 function TenureStep({ onPick }: { onPick: (t: Tenure) => void }) {
   const cards: { id: Tenure; title: string; sub: string; Icon: typeof Home }[] = [
-    { id: "homeowner", title: "I own my home", sub: "Solar, heat pumps, efficiency upgrades", Icon: Home },
+    {
+      id: "homeowner",
+      title: "I own my home",
+      sub: "Solar, heat pumps, efficiency upgrades",
+      Icon: Home,
+    },
     { id: "renter", title: "I rent", sub: "Community solar, renter rebates, EVs", Icon: Building2 },
-    { id: "curious", title: "Not sure yet", sub: "Just learning — show me everything", Icon: HelpCircle },
+    {
+      id: "curious",
+      title: "Not sure yet",
+      sub: "Just learning — show me everything",
+      Icon: HelpCircle,
+    },
   ];
   return (
     <div className="flex h-full flex-col items-center justify-center px-2 py-8 text-center">
@@ -573,9 +758,7 @@ function TenureStep({ onPick }: { onPick: (t: Tenure) => void }) {
       <span className="mb-5 flex h-11 w-11 items-center justify-center rounded-full bg-primary-light">
         <Home className="h-5 w-5 text-primary-dark" />
       </span>
-      <h2 className="text-2xl font-semibold tracking-tight sm:text-3xl">
-        Tell us about your home
-      </h2>
+      <h2 className="text-2xl font-semibold tracking-tight sm:text-3xl">Tell us about your home</h2>
       <p className="mt-3 max-w-md text-sm text-muted-foreground">
         Helps us tailor advice, rebates, and programs to your actual situation.
       </p>
@@ -595,9 +778,7 @@ function TenureStep({ onPick }: { onPick: (t: Tenure) => void }) {
         ))}
       </div>
 
-      <p className="mt-6 text-xs text-muted-foreground">
-        No account needed · not stored anywhere
-      </p>
+      <p className="mt-6 text-xs text-muted-foreground">No account needed · not stored anywhere</p>
     </div>
   );
 }
@@ -642,12 +823,10 @@ function ZipStep({ onDone }: { onDone: (loc: Location | null) => void }) {
       <span className="mb-5 flex h-11 w-11 items-center justify-center rounded-full bg-primary-light">
         <MapPin className="h-5 w-5 text-primary-dark" />
       </span>
-      <h2 className="text-2xl font-semibold tracking-tight sm:text-3xl">
-        What's your zip code?
-      </h2>
+      <h2 className="text-2xl font-semibold tracking-tight sm:text-3xl">What's your zip code?</h2>
       <p className="mt-3 max-w-md text-sm text-muted-foreground">
-        Rebates and programs vary by utility and state. Your zip helps us surface
-        what's actually available where you live.
+        Rebates and programs vary by utility and state. Your zip helps us surface what's actually
+        available where you live.
       </p>
 
       <div className="mt-8 flex w-full max-w-[320px] flex-col gap-3">
@@ -669,10 +848,7 @@ function ZipStep({ onDone }: { onDone: (loc: Location | null) => void }) {
           disabled={loading || !!resolved}
           className="rounded-md border border-border bg-card px-4 py-3 text-center text-lg tracking-[0.3em] shadow-sm placeholder:tracking-normal placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary disabled:opacity-60"
         />
-        <Button
-          onClick={lookup}
-          disabled={zip.length !== 5 || loading || !!resolved}
-        >
+        <Button onClick={lookup} disabled={zip.length !== 5 || loading || !!resolved}>
           {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Look up"}
         </Button>
 
@@ -684,9 +860,7 @@ function ZipStep({ onDone }: { onDone: (loc: Location | null) => void }) {
         )}
         {error && <p className="text-sm text-destructive">{error}</p>}
 
-        <p className="mt-1 text-xs text-muted-foreground">
-          Only your zip — never your address
-        </p>
+        <p className="mt-1 text-xs text-muted-foreground">Only your zip — never your address</p>
         <button
           type="button"
           onClick={() => onDone(null)}
@@ -702,6 +876,7 @@ function ZipStep({ onDone }: { onDone: (loc: Location | null) => void }) {
 function ChipsStep({
   tenure,
   location,
+  presets,
   onPick,
   onChangeTenure,
   onChangeZip,
@@ -709,65 +884,76 @@ function ChipsStep({
 }: {
   tenure: Tenure;
   location: Location | null;
-  onPick: (text: string) => void;
+  presets: StarterPreset[];
+  onPick: (preset: StarterPreset) => void;
   onChangeTenure: () => void;
   onChangeZip: () => void;
   disabled: boolean;
 }) {
   const { label, icon: Icon } = TENURE_META[tenure];
   return (
-    <div className="flex h-full flex-col items-center justify-center px-2 py-8 text-center">
-      <StepDots active={3} />
+    // Header/list layout: the step dots, tenure/location pills, and heading are
+    // a pinned header (shrink-0) so the orientation and the "change" controls
+    // stay visible; only the chips scroll (flex-1 min-h-0 overflow-y-auto —
+    // min-h-0 lets the scroll region shrink below its content inside the flex
+    // column). h-full so the whole step fills the parent and never itself
+    // overflows the outer scroller.
+    <div className="flex h-full flex-col px-2 pt-6 text-center">
+      <div className="shrink-0">
+        <StepDots active={3} />
 
-      <div className="mb-5 flex flex-wrap items-center justify-center gap-2">
-        <button
-          type="button"
-          onClick={onChangeTenure}
-          className="inline-flex items-center gap-1.5 rounded-full border border-primary bg-primary-light px-3 py-1 text-xs font-medium text-primary-dark hover:bg-primary-light/70"
-        >
-          <Icon className="h-3.5 w-3.5" />
-          {label}
-          <span className="text-[11px] font-normal text-muted-foreground">· change</span>
-        </button>
-        <button
-          type="button"
-          onClick={onChangeZip}
-          className="inline-flex items-center gap-1.5 rounded-full border border-primary bg-primary-light px-3 py-1 text-xs font-medium text-primary-dark hover:bg-primary-light/70"
-        >
-          <MapPin className="h-3.5 w-3.5" />
-          {location ? `${location.city}, ${location.state}` : "No location"}
-          <span className="text-[11px] font-normal text-muted-foreground">
-            · {location ? "change" : "add"}
-          </span>
-        </button>
-      </div>
-
-      <h2 className="text-2xl font-semibold tracking-tight sm:text-3xl">
-        What are you curious about?
-      </h2>
-      <p className="mt-3 max-w-md text-sm text-muted-foreground">
-        {location
-          ? `Showing what's available in ${location.city}, ${location.state} — no jargon, no pressure.`
-          : "Ask anything — no jargon, no pressure."}
-      </p>
-
-      <div className="mt-8 grid w-full max-w-[480px] grid-cols-1 gap-3 sm:grid-cols-2">
-        {CHIPS[tenure].map((c) => (
+        <div className="mb-4 flex flex-wrap items-center justify-center gap-2">
           <button
-            key={c.category}
             type="button"
-            disabled={disabled}
-            onClick={() => onPick(c.prompt)}
-            className="group flex flex-col items-start gap-1.5 rounded-xl border border-border bg-card p-4 text-left transition hover:border-primary hover:shadow-sm disabled:opacity-60"
+            onClick={onChangeTenure}
+            className="inline-flex items-center gap-1.5 rounded-full border border-primary bg-primary-light px-3 py-1 text-xs font-medium text-primary-dark hover:bg-primary-light/70"
           >
-            <span className="text-xs font-semibold uppercase tracking-wide text-primary-dark">
-              {c.category}
-            </span>
-            <span className="text-sm text-muted-foreground transition group-hover:text-foreground">
-              {c.prompt}
+            <Icon className="h-3.5 w-3.5" />
+            {label}
+            <span className="text-[11px] font-normal text-muted-foreground">· change</span>
+          </button>
+          <button
+            type="button"
+            onClick={onChangeZip}
+            className="inline-flex items-center gap-1.5 rounded-full border border-primary bg-primary-light px-3 py-1 text-xs font-medium text-primary-dark hover:bg-primary-light/70"
+          >
+            <MapPin className="h-3.5 w-3.5" />
+            {location ? `${location.city}, ${location.state}` : "No location"}
+            <span className="text-[11px] font-normal text-muted-foreground">
+              · {location ? "change" : "add"}
             </span>
           </button>
-        ))}
+        </div>
+
+        <h2 className="text-2xl font-semibold tracking-tight sm:text-3xl">
+          What are you curious about?
+        </h2>
+        <p className="mx-auto mt-2 max-w-md text-sm text-muted-foreground">
+          {location
+            ? `Showing what's available in ${location.city}, ${location.state} — no jargon, no pressure.`
+            : "Ask anything — no jargon, no pressure."}
+        </p>
+      </div>
+
+      <div className="mt-5 min-h-0 flex-1 overflow-y-auto pb-1">
+        <div className="mx-auto grid w-full max-w-[480px] grid-cols-1 gap-2.5 sm:grid-cols-2">
+          {presets.map((p) => (
+            <button
+              key={p.slug}
+              type="button"
+              disabled={disabled}
+              onClick={() => onPick(p)}
+              className="group flex flex-col items-start gap-1 rounded-xl border border-border bg-card p-3.5 text-left transition hover:border-primary hover:shadow-sm disabled:opacity-60"
+            >
+              <span className="text-xs font-semibold uppercase tracking-wide text-primary-dark">
+                {p.category}
+              </span>
+              <span className="text-sm text-muted-foreground transition group-hover:text-foreground">
+                {p.first_message}
+              </span>
+            </button>
+          ))}
+        </div>
       </div>
     </div>
   );

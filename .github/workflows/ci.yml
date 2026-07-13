@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  pull_request:
+    # phase-3 is the Phase 3 integration branch; WP3.x PRs target it, so CI
+    # must gate them too (removed when phase-3 promotes to dev and is deleted).
+    branches: [dev, mvp, phase-3]
+  push:
+    branches: [dev, mvp, phase-3]
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Lint
+        run: bun run lint
+
+      - name: Typecheck
+        run: bun run typecheck
+
+      - name: Test
+        run: bun run test
+
+      - name: Validate content
+        run: bun run validate:content
+
+      # Informational only (WP3.3b): the corpus coverage survey prints candidate
+      # pool sizes, lane/technology coverage, and the projected authored share.
+      # It never fails CI here — WP3.6 turns the authored-share gate hard.
+      - name: Corpus coverage report
+        run: bun run corpus-report

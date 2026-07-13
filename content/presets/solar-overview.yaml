@@ -1,0 +1,15 @@
+slug: solar-overview
+label: Solar overview
+category: Solar
+first_message: Give me a plain-language overview of solar.
+profile_patches:
+  - op: append
+    slot: preferences
+    provenance: stated
+    value:
+      entity: tech:solar
+      stance: curious
+      provenance: stated
+tenures: []
+regions:
+  - US

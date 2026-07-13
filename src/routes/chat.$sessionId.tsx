@@ -6,7 +6,21 @@ import { DefaultChatTransport, type UIMessage } from "ai";
 import type { Session, User } from "@supabase/supabase-js";
 import { useAuth } from "@/hooks/use-auth";
 import { supabase } from "@/integrations/supabase/client";
+import type { Json } from "@/integrations/supabase/types";
 import { createSession } from "@/lib/sessions";
+import { emptyProfile, normalizeProfile } from "@/lib/profile/normalize";
+import type { SessionProfile } from "@/lib/profile/registry";
+import { missingSlotLabels } from "@/lib/profile/readiness-gate";
+import { PROFILE_PATCH_PART_TYPE, readProfilePatchData } from "@/lib/profile/stream";
+import {
+  CONTEXT_DEBUG_PART_TYPE,
+  readContextDebugData,
+  type ContextDebugData,
+} from "@/lib/prompts/inspector";
+import { PromptInspector } from "@/components/PromptInspector";
+import { useSessionProfile } from "@/hooks/use-session-profile";
+import { useReadinessGate } from "@/hooks/use-readiness-gate";
+import { ProfilePanel } from "@/components/ProfileSidebar";
 import { AuthModal } from "@/components/AuthModal";
 import { PrivacyBanner } from "@/components/PrivacyBanner";
 import {
@@ -16,6 +30,7 @@ import {
   ConversationScrollButton,
 } from "@/components/ai-elements/conversation";
 import { Message, MessageContent, MessageResponse } from "@/components/ai-elements/message";
+import { AssistantMessage } from "@/components/chat/AssistantMessage";
 import {
   PromptInput,
   PromptInputTextarea,
@@ -24,14 +39,7 @@ import {
 } from "@/components/ai-elements/prompt-input";
 import { Shimmer } from "@/components/ai-elements/shimmer";
 import { Button } from "@/components/ui/button";
-import {
-  ArrowLeft,
-  FileText,
-  Leaf,
-  Loader2,
-  ThumbsDown,
-  ThumbsUp,
-} from "lucide-react";
+import { ArrowLeft, FileText, Leaf, Loader2, ThumbsDown, ThumbsUp } from "lucide-react";
 import { toast } from "sonner";
 
 const searchSchema = z.object({
@@ -80,6 +88,8 @@ function ChatSessionPage() {
 
   const [initialMessages, setInitialMessages] = useState<UIMessage[] | null>(null);
   const [persona, setPersona] = useState<string | null>(searchPersona ?? null);
+  const [initialProfile, setInitialProfile] = useState<SessionProfile>(emptyProfile);
+  const [initialReachedAt, setInitialReachedAt] = useState<string | null>(null);
   const [notFound, setNotFound] = useState(false);
 
   useEffect(() => {
@@ -89,7 +99,13 @@ function ChatSessionPage() {
     let cancelled = false;
     (async () => {
       const [sessionRes, msgRes, profileRes] = await Promise.all([
-        supabase.from("sessions").select("id, user_id").eq("id", sessionId).maybeSingle(),
+        // Load the session profile (WP1.6) + readiness stamp (WP1.7) so the
+        // sidebar and the report gate render from them.
+        supabase
+          .from("sessions")
+          .select("id, user_id, profile, readiness_reached_at")
+          .eq("id", sessionId)
+          .maybeSingle(),
         supabase
           .from("messages")
           .select("id, role, content, created_at")
@@ -102,6 +118,10 @@ function ChatSessionPage() {
         setNotFound(true);
         return;
       }
+      // Normalize on read: an old or junk-shaped column heals rather than
+      // blocks (§11).
+      setInitialProfile(normalizeProfile(sessionRes.data.profile));
+      setInitialReachedAt(sessionRes.data.readiness_reached_at);
       setInitialMessages((msgRes.data ?? []).map(rowToUIMessage));
       setPersona((prev) => prev ?? profileRes.data?.persona ?? null);
     })();
@@ -157,6 +177,8 @@ function ChatSessionPage() {
       key={sessionId}
       sessionId={sessionId}
       initialMessages={initialMessages}
+      initialProfile={initialProfile}
+      initialReachedAt={initialReachedAt}
       persona={persona}
       initialMessage={initialMessage}
       user={user}
@@ -168,6 +190,8 @@ function ChatSessionPage() {
 function ChatConversation({
   sessionId,
   initialMessages,
+  initialProfile,
+  initialReachedAt,
   persona,
   initialMessage,
   user,
@@ -175,6 +199,8 @@ function ChatConversation({
 }: {
   sessionId: string;
   initialMessages: UIMessage[];
+  initialProfile: SessionProfile;
+  initialReachedAt: string | null;
   persona: string | null;
   initialMessage: string | undefined;
   user: User;
@@ -183,8 +209,35 @@ function ChatConversation({
   const navigate = useNavigate();
   const [feedbackSent, setFeedbackSent] = useState(false);
   const [creatingNext, setCreatingNext] = useState(false);
+  // The readiness ratchet stamp (§4.5). Seeded from the loaded session and
+  // remembered locally the moment the gate first opens, so a within-session
+  // edit that drops a required slot can't re-lock the report. The DB stamp is
+  // written server-side per turn (api/chat.ts) — this is the read-side memory.
+  const [reachedAt, setReachedAt] = useState<string | null>(initialReachedAt);
+  // The assembled system prompt for the last turn — populated only when the
+  // server streams it (dev prompt inspector, off in prod).
+  const [contextDebug, setContextDebug] = useState<ContextDebugData | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const sentInitialRef = useRef(false);
+
+  // Reactive session profile (WP1.6): seeded from the loaded column, kept
+  // live by per-turn extraction (onData) and sidebar edits, and persisted
+  // to sessions.profile with the browser Supabase client — RLS ("Users
+  // manage own sessions") permits it, so no new endpoint is needed.
+  const profileStore = useSessionProfile(initialProfile, (updated) => {
+    void supabase
+      .from("sessions")
+      .update({ profile: updated as unknown as Json })
+      .eq("id", sessionId)
+      .then(({ error }) => {
+        if (error) console.error("[chat] profile persist failed", error);
+      });
+  });
+
+  // Report gate (WP1.7): unlocks on information sufficiency, not turn count,
+  // and ratchets — once open it stays open. onReach only remembers the stamp
+  // locally; the server already persisted it to sessions.readiness_reached_at.
+  const gate = useReadinessGate(profileStore.profile, reachedAt, setReachedAt);
 
   const transport = useMemo(
     () =>
@@ -206,6 +259,20 @@ function ChatConversation({
     transport,
     onError(err) {
       toast.error(err.message || "Something went wrong");
+    },
+    // The server persists the profile itself each turn and streams a transient
+    // `data-profile-patch` (WP1.5); apply it into local state so the sidebar
+    // updates live without a reload. This does not re-persist — the server
+    // already wrote sessions.profile — but applyPatches is idempotent enough
+    // that a redundant write would be harmless.
+    onData(part) {
+      if (part.type === CONTEXT_DEBUG_PART_TYPE) {
+        setContextDebug(readContextDebugData(part.data));
+        return;
+      }
+      if (part.type !== PROFILE_PATCH_PART_TYPE) return;
+      const patches = readProfilePatchData(part.data);
+      profileStore.applyProfilePatches(patches);
     },
   });
 
@@ -254,112 +321,140 @@ function ChatConversation({
   return (
     <>
       <PrivacyBanner />
-      <div className="mx-auto flex h-[calc(100vh-8rem)] max-w-3xl flex-col px-4 pb-6 pt-4">
-        {/* Header */}
-        <div className="mb-3 flex items-center justify-between gap-2">
-          <Button variant="ghost" size="sm" asChild>
-            <Link to="/history">
-              <ArrowLeft className="mr-1 h-4 w-4" /> All chats
-            </Link>
-          </Button>
-          <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={creatingNext}
-              onClick={async () => {
-                if (creatingNext) return;
-                setCreatingNext(true);
-                try {
-                  const newId = await createSession(user.id);
-                  navigate({ to: "/chat/$sessionId", params: { sessionId: newId } });
-                } catch {
-                  toast.error("Couldn't start a new conversation");
-                } finally {
-                  setCreatingNext(false);
-                }
-              }}
-            >
-              {creatingNext ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : null}
-              New chat
+      <div className="mx-auto flex w-full max-w-6xl flex-col px-4 lg:flex-row lg:gap-4">
+        <div className="flex h-[calc(100vh-8rem)] w-full max-w-3xl flex-1 flex-col pb-6 pt-4 lg:order-1">
+          {/* Header */}
+          <div className="mb-3 flex items-center justify-between gap-2">
+            <Button variant="ghost" size="sm" asChild>
+              <Link to="/history">
+                <ArrowLeft className="mr-1 h-4 w-4" /> All chats
+              </Link>
             </Button>
-            {messages.filter((m) => m.role === "assistant").length >= 3 && (
-              <Button variant="outline" size="sm" asChild>
-                <Link to="/report" search={{ sessionId } as never}>
-                  <FileText className="mr-1 h-4 w-4" /> Generate report
-                </Link>
+            <div className="flex items-center gap-2">
+              {contextDebug ? <PromptInspector data={contextDebug} /> : null}
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={creatingNext}
+                onClick={async () => {
+                  if (creatingNext) return;
+                  setCreatingNext(true);
+                  try {
+                    const newId = await createSession(user.id);
+                    navigate({ to: "/chat/$sessionId", params: { sessionId: newId } });
+                  } catch {
+                    toast.error("Couldn't start a new conversation");
+                  } finally {
+                    setCreatingNext(false);
+                  }
+                }}
+              >
+                {creatingNext ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : null}
+                New chat
               </Button>
-            )}
+              {gate.open ? (
+                <Button variant="outline" size="sm" asChild>
+                  <Link to="/report" search={{ sessionId } as never}>
+                    <FileText className="mr-1 h-4 w-4" /> Generate report
+                  </Link>
+                </Button>
+              ) : (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled
+                  title={`Still need: ${missingSlotLabels(gate.missing).join(", ")}`}
+                >
+                  <FileText className="mr-1 h-4 w-4" /> Generate report
+                </Button>
+              )}
+            </div>
           </div>
-        </div>
 
-        {/* Transcript */}
-        <Conversation className="flex-1 rounded-2xl border border-border bg-card">
-          <ConversationContent>
-            {messages.length === 0 ? (
-              <ConversationEmptyState
-                icon={<Leaf className="h-6 w-6 text-primary" />}
-                title="Let's get started"
-                description="Tell me a little about your home or what's on your mind — there are no wrong questions."
-              />
-            ) : (
-              messages.map((m) => (
-                <Message key={m.id} from={m.role === "user" ? "user" : "assistant"}>
+          {/* What still gates the report (WP1.7) — visible, not just a tooltip. */}
+          {!gate.open && messages.length > 0 && (
+            <p className="mb-3 text-center text-xs text-muted-foreground">
+              Your report unlocks once we know:{" "}
+              <span className="font-medium text-foreground">
+                {missingSlotLabels(gate.missing).join(", ")}
+              </span>
+            </p>
+          )}
+
+          {/* Transcript */}
+          <Conversation className="flex-1 rounded-2xl border border-border bg-card">
+            <ConversationContent>
+              {messages.length === 0 ? (
+                <ConversationEmptyState
+                  icon={<Leaf className="h-6 w-6 text-primary" />}
+                  title="Let's get started"
+                  description="Tell me a little about your home or what's on your mind — there are no wrong questions."
+                />
+              ) : (
+                messages.map((m) => {
+                  const text = m.parts.map((p) => (p.type === "text" ? p.text : "")).join("");
+                  return (
+                    <Message key={m.id} from={m.role === "user" ? "user" : "assistant"}>
+                      <MessageContent>
+                        {m.role === "assistant" ? (
+                          <AssistantMessage text={text} />
+                        ) : (
+                          <MessageResponse>{text}</MessageResponse>
+                        )}
+                      </MessageContent>
+                    </Message>
+                  );
+                })
+              )}
+              {status === "submitted" && (
+                <Message from="assistant">
                   <MessageContent>
-                    <MessageResponse>
-                      {m.parts
-                        .map((p) => (p.type === "text" ? p.text : ""))
-                        .join("")}
-                    </MessageResponse>
+                    <Shimmer>Thinking…</Shimmer>
                   </MessageContent>
                 </Message>
-              ))
-            )}
-            {status === "submitted" && (
-              <Message from="assistant">
-                <MessageContent>
-                  <Shimmer>Thinking…</Shimmer>
-                </MessageContent>
-              </Message>
-            )}
-          </ConversationContent>
-          <ConversationScrollButton />
-        </Conversation>
+              )}
+            </ConversationContent>
+            <ConversationScrollButton />
+          </Conversation>
 
-        {/* Feedback */}
-        {messages.filter((m) => m.role === "assistant").length >= 2 && !feedbackSent && (
-          <div className="mt-3 flex items-center justify-center gap-2 text-xs text-muted-foreground">
-            <span>Is this helpful?</span>
-            <Button variant="ghost" size="sm" onClick={() => sendFeedback("up")}>
-              <ThumbsUp className="h-3.5 w-3.5" />
-            </Button>
-            <Button variant="ghost" size="sm" onClick={() => sendFeedback("down")}>
-              <ThumbsDown className="h-3.5 w-3.5" />
-            </Button>
-          </div>
-        )}
-
-        {/* Composer */}
-        <div className="mt-3">
-          <PromptInput
-            onSubmit={(msg) => {
-              const text = msg.text?.trim();
-              if (!text || isBusy) return;
-              sendMessage({ text });
-            }}
-          >
-            <PromptInputTextarea
-              ref={textareaRef}
-              placeholder="Ask anything — solar, heat pumps, EVs, efficiency…"
-            />
-            <PromptInputFooter className="justify-end">
-              <PromptInputSubmit status={status} disabled={isBusy} />
-            </PromptInputFooter>
-          </PromptInput>
-          {error && (
-            <p className="mt-2 text-xs text-destructive">{error.message}</p>
+          {/* Feedback */}
+          {messages.filter((m) => m.role === "assistant").length >= 2 && !feedbackSent && (
+            <div className="mt-3 flex items-center justify-center gap-2 text-xs text-muted-foreground">
+              <span>Is this helpful?</span>
+              <Button variant="ghost" size="sm" onClick={() => sendFeedback("up")}>
+                <ThumbsUp className="h-3.5 w-3.5" />
+              </Button>
+              <Button variant="ghost" size="sm" onClick={() => sendFeedback("down")}>
+                <ThumbsDown className="h-3.5 w-3.5" />
+              </Button>
+            </div>
           )}
+
+          {/* Composer */}
+          <div className="mt-3">
+            <PromptInput
+              onSubmit={(msg) => {
+                const text = msg.text?.trim();
+                if (!text || isBusy) return;
+                sendMessage({ text });
+              }}
+            >
+              <PromptInputTextarea
+                ref={textareaRef}
+                placeholder="Ask anything — solar, heat pumps, EVs, efficiency…"
+              />
+              <PromptInputFooter className="justify-end">
+                <PromptInputSubmit status={status} disabled={isBusy} />
+              </PromptInputFooter>
+            </PromptInput>
+            {error && <p className="mt-2 text-xs text-destructive">{error.message}</p>}
+          </div>
         </div>
+        <ProfilePanel
+          profile={profileStore.profile}
+          onEdit={profileStore.applyProfilePatches}
+          className="mt-4 max-h-[calc(100vh-8rem)] lg:order-2"
+        />
       </div>
     </>
   );

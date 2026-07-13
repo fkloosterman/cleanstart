@@ -27,11 +27,17 @@ import {
 import { toast } from "sonner";
 import { generateReport, getReport } from "@/lib/report.functions";
 import { generateGuestReport } from "@/lib/guest-report.functions";
+import { readGuestReport, writeGuestReport } from "@/lib/guest-storage";
+import { ReportDocumentView } from "@/components/report/ReportDocumentView";
+import { parseReportDocument } from "@/lib/report/document";
+import { REPORT_DOCUMENT_FIXTURES, type ReportFixtureKey } from "@/lib/report/fixtures";
 
 const searchSchema = z.object({
   sessionId: z.string().uuid().optional(),
   example: z.coerce.boolean().optional(),
   guest: z.coerce.boolean().optional(),
+  /** Preview a hand-written ReportDocument fixture (WP3.5); dev/demo only. */
+  doc: z.string().optional(),
 });
 
 export const Route = createFileRoute("/report")({
@@ -55,6 +61,8 @@ type ReportRow = {
   next_steps: unknown;
   resources: unknown;
   created_at: string;
+  /** The structured ReportDocument (WP3.5+); null for legacy reports (D5). */
+  document?: unknown;
 };
 
 type Option = { title: string; why: string; good_fit_when: string[]; tradeoffs: string };
@@ -71,13 +79,21 @@ const EXAMPLE: ReportRow = {
     {
       title: "Heat pump for heating and cooling",
       why: "Your gas furnace is 14 years old and you already have ductwork — a great moment to consider electrifying.",
-      good_fit_when: ["Existing ducts in decent shape", "You want AC plus heat in one system", "You'd like lower long-term operating costs"],
+      good_fit_when: [
+        "Existing ducts in decent shape",
+        "You want AC plus heat in one system",
+        "You'd like lower long-term operating costs",
+      ],
       tradeoffs: "Upfront cost is higher than swapping in another gas furnace; sizing matters.",
     },
     {
       title: "Rooftop solar",
       why: "South-facing roof, low shading, and an electrifying home make solar a strong long-term fit.",
-      good_fit_when: ["You plan to stay 5+ years", "Roof has 10+ years of life left", "You want to offset rising electric use"],
+      good_fit_when: [
+        "You plan to stay 5+ years",
+        "Roof has 10+ years of life left",
+        "You want to offset rising electric use",
+      ],
       tradeoffs: "Payback depends on local rates and incentives — worth getting 2–3 quotes.",
     },
   ],
@@ -87,19 +103,69 @@ const EXAMPLE: ReportRow = {
     "Insulation and air sealing make every other upgrade work better and cost less.",
   ],
   next_steps: [
-    { step: "Get a home energy assessment", detail: "Many utilities offer free or low-cost audits that flag the biggest wins." },
-    { step: "Ask three HVAC contractors about cold-climate heat pumps", detail: "Compare sizing and Manual J calculations, not just price." },
-    { step: "Check current federal and state incentives", detail: "They change yearly and stack with utility rebates." },
+    {
+      step: "Get a home energy assessment",
+      detail: "Many utilities offer free or low-cost audits that flag the biggest wins.",
+    },
+    {
+      step: "Ask three HVAC contractors about cold-climate heat pumps",
+      detail: "Compare sizing and Manual J calculations, not just price.",
+    },
+    {
+      step: "Check current federal and state incentives",
+      detail: "They change yearly and stack with utility rebates.",
+    },
   ],
   resources: [
-    { label: "DOE Energy Saver", description: "Plain-language guides on heating, cooling, and weatherization." },
-    { label: "Rewiring America", description: "Calculators and step-by-step electrification guides." },
+    {
+      label: "DOE Energy Saver",
+      description: "Plain-language guides on heating, cooling, and weatherization.",
+    },
+    {
+      label: "Rewiring America",
+      description: "Calculators and step-by-step electrification guides.",
+    },
     { label: "EPA Energy Star", description: "Product ratings to compare efficient appliances." },
   ],
 };
 
+/**
+ * Pick the renderer for a report row: the structured document renderer
+ * (WP3.5) when `document` is present, otherwise the legacy renderer (D5 —
+ * old rows render exactly as before, never regenerated).
+ */
+function ReportSurface({
+  report,
+  isExample,
+  onRegenerate,
+  regenerating,
+}: {
+  report: ReportRow;
+  isExample?: boolean;
+  onRegenerate?: () => void;
+  regenerating?: boolean;
+}) {
+  const document = parseReportDocument(report.document);
+  if (document) {
+    return (
+      <>
+        <PrivacyBanner />
+        <ReportDocumentView document={document} isExample={isExample} />
+      </>
+    );
+  }
+  return (
+    <ReportView
+      report={report}
+      isExample={isExample}
+      onRegenerate={onRegenerate}
+      regenerating={regenerating}
+    />
+  );
+}
+
 function ReportPage() {
-  const { sessionId, example, guest } = Route.useSearch();
+  const { sessionId, example, guest, doc } = Route.useSearch();
   const { user, loading: authLoading } = useAuth();
   const navigate = useNavigate();
   const fetchReport = useServerFn(getReport);
@@ -120,31 +186,76 @@ function ReportPage() {
       .finally(() => setLoading(false));
   }, [sessionId, user, example, fetchReport]);
 
-  // Guest flow: read transcript from sessionStorage and generate without auth
+  // Guest flow (WP3.10): a "Generate report" click writes a generation request
+  // to sessionStorage and navigates here. When that request is present we
+  // generate, persist the result to localStorage, and consume the request. On a
+  // later visit or a browser restart (no pending request) we render the
+  // persisted report instead — no regeneration, no model call, no report-cap
+  // hit. The stored report survives a restart; the request does not.
   useEffect(() => {
     if (!guest || example || report || generating) return;
     if (typeof window === "undefined") return;
-    let payload: { tenure: "homeowner" | "renter" | "curious" | null; messages: { role: "user" | "assistant" | "system"; content: string }[] } | null = null;
+
+    let payload: {
+      tenure: "homeowner" | "renter" | "curious" | null;
+      profile?: unknown;
+      messages: { role: "user" | "assistant" | "system"; content: string }[];
+    } | null = null;
     try {
       const raw = window.sessionStorage.getItem("cleanstart.guest-report.v1");
       if (raw) payload = JSON.parse(raw);
     } catch {
       // ignore
     }
-    if (!payload || !payload.messages?.length) {
-      setError("No conversation found. Start a chat first.");
+
+    if (payload?.messages?.length) {
+      setGenerating(true);
+      setError(null);
+      buildGuestReport({ data: payload })
+        .then((r) => {
+          const row = r as unknown as ReportRow;
+          setReport(row);
+          // Persist so a browser restart re-renders without regenerating (§9).
+          writeGuestReport({
+            persona: row.persona,
+            created_at: row.created_at,
+            document: row.document,
+          });
+          // Consume the request so a reload doesn't regenerate or re-spend a
+          // report slot.
+          try {
+            window.sessionStorage.removeItem("cleanstart.guest-report.v1");
+          } catch {
+            // ignore
+          }
+        })
+        .catch((e) => {
+          const msg = e instanceof Error ? e.message : "Couldn't generate report";
+          setError(msg);
+          toast.error(msg);
+        })
+        .finally(() => setGenerating(false));
       return;
     }
-    setGenerating(true);
-    setError(null);
-    buildGuestReport({ data: payload })
-      .then((r) => setReport(r as unknown as ReportRow))
-      .catch((e) => {
-        const msg = e instanceof Error ? e.message : "Couldn't generate report";
-        setError(msg);
-        toast.error(msg);
-      })
-      .finally(() => setGenerating(false));
+
+    // No pending request: render the persisted report if the guest has one.
+    const stored = readGuestReport();
+    if (stored) {
+      setReport({
+        id: "guest",
+        session_id: "guest",
+        persona: stored.persona,
+        readiness_score: null,
+        top_options: [],
+        key_insights: [],
+        next_steps: [],
+        resources: [],
+        created_at: stored.created_at,
+        document: stored.document,
+      });
+      return;
+    }
+    setError("No conversation found. Start a chat first.");
   }, [guest, example, report, generating, buildGuestReport]);
 
   const handleGenerate = async () => {
@@ -164,8 +275,22 @@ function ReportPage() {
     }
   };
 
+  // Preview a hand-written ReportDocument fixture (WP3.5) — the composer
+  // doesn't exist yet, so this is how the new renderer is exercised.
+  if (doc && doc in REPORT_DOCUMENT_FIXTURES) {
+    return (
+      <>
+        <PrivacyBanner />
+        <ReportDocumentView
+          document={REPORT_DOCUMENT_FIXTURES[doc as ReportFixtureKey]}
+          isExample
+        />
+      </>
+    );
+  }
+
   if (example) {
-    return <ReportView report={EXAMPLE} isExample />;
+    return <ReportSurface report={EXAMPLE} isExample />;
   }
 
   if (guest) {
@@ -193,7 +318,7 @@ function ReportPage() {
         </div>
       );
     }
-    if (report) return <ReportView report={report} />;
+    if (report) return <ReportSurface report={report} />;
   }
 
   if (!sessionId) {
@@ -209,7 +334,9 @@ function ReportPage() {
             <Link to="/chat">Start a conversation</Link>
           </Button>
           <Button variant="outline" asChild>
-            <Link to="/report" search={{ example: true }}>See an example</Link>
+            <Link to="/report" search={{ example: true }}>
+              See an example
+            </Link>
           </Button>
         </div>
       </div>
@@ -267,7 +394,7 @@ function ReportPage() {
     );
   }
 
-  return <ReportView report={report} onRegenerate={handleGenerate} regenerating={generating} />;
+  return <ReportSurface report={report} onRegenerate={handleGenerate} regenerating={generating} />;
 }
 
 function ReportView({
@@ -332,22 +459,19 @@ function ReportView({
       let y = 0;
 
       // ── Color palette ──────────────────────────────────────────────────────
-      const BRAND_GREEN: [number, number, number] = [22, 101, 52];   // deep green
-      const ACCENT_GREEN: [number, number, number] = [34, 197, 94];  // bright green
-      const SECTION_BLUE: [number, number, number] = [30, 64, 175];  // indigo-blue
-      const CARD_BG: [number, number, number] = [240, 253, 244];     // very light green
-      const DIVIDER: [number, number, number] = [209, 250, 229];     // light green divider
-      const BODY_TEXT: [number, number, number] = [30, 41, 59];      // slate-800
-      const MUTED_TEXT: [number, number, number] = [100, 116, 139];  // slate-500
+      const BRAND_GREEN: [number, number, number] = [22, 101, 52]; // deep green
+      const ACCENT_GREEN: [number, number, number] = [34, 197, 94]; // bright green
+      const SECTION_BLUE: [number, number, number] = [30, 64, 175]; // indigo-blue
+      const CARD_BG: [number, number, number] = [240, 253, 244]; // very light green
+      const DIVIDER: [number, number, number] = [209, 250, 229]; // light green divider
+      const BODY_TEXT: [number, number, number] = [30, 41, 59]; // slate-800
+      const MUTED_TEXT: [number, number, number] = [100, 116, 139]; // slate-500
       const WHITE: [number, number, number] = [255, 255, 255];
 
       // ── Helpers ────────────────────────────────────────────────────────────
-      const setColor = (rgb: [number, number, number]) =>
-        doc.setTextColor(rgb[0], rgb[1], rgb[2]);
-      const setFill = (rgb: [number, number, number]) =>
-        doc.setFillColor(rgb[0], rgb[1], rgb[2]);
-      const setDraw = (rgb: [number, number, number]) =>
-        doc.setDrawColor(rgb[0], rgb[1], rgb[2]);
+      const setColor = (rgb: [number, number, number]) => doc.setTextColor(rgb[0], rgb[1], rgb[2]);
+      const setFill = (rgb: [number, number, number]) => doc.setFillColor(rgb[0], rgb[1], rgb[2]);
+      const setDraw = (rgb: [number, number, number]) => doc.setDrawColor(rgb[0], rgb[1], rgb[2]);
 
       const ensureSpace = (h: number) => {
         if (y + h > pageHeight - margin) {
@@ -383,7 +507,9 @@ function ReportView({
         return lines.length * lh;
       };
 
-      const gap = (h = 10) => { y += h; };
+      const gap = (h = 10) => {
+        y += h;
+      };
 
       /** Draw a full-width horizontal rule */
       const rule = (color: [number, number, number] = DIVIDER, thickness = 0.5) => {
@@ -436,7 +562,9 @@ function ReportView({
 
       // Date
       const dateStr = new Date().toLocaleDateString("en-US", {
-        year: "numeric", month: "long", day: "numeric",
+        year: "numeric",
+        month: "long",
+        day: "numeric",
       });
       doc.setFontSize(9);
       setColor([134, 239, 172]);
@@ -530,7 +658,14 @@ function ReportView({
 
           // Tradeoffs
           if (o.tradeoffs) {
-            writeText(`Tradeoff: ${o.tradeoffs}`, 9, "italic", [161, 98, 7], margin + 12, contentWidth - 20);
+            writeText(
+              `Tradeoff: ${o.tradeoffs}`,
+              9,
+              "italic",
+              [161, 98, 7],
+              margin + 12,
+              contentWidth - 20,
+            );
           }
 
           // Draw the card box retroactively
@@ -551,7 +686,10 @@ function ReportView({
           doc.text(`${idx + 1}.`, margin + 10, y);
           doc.setFontSize(12);
           setColor(BODY_TEXT);
-          titleLines.forEach((line) => { doc.text(line, margin + 24, y); y += 15; });
+          titleLines.forEach((line) => {
+            doc.text(line, margin + 24, y);
+            y += 15;
+          });
           gap(2);
           writeText(o.why, 10, "normal", BODY_TEXT, margin + 12, contentWidth - 20);
           gap(4);
@@ -564,7 +702,15 @@ function ReportView({
             });
             gap(3);
           }
-          if (o.tradeoffs) writeText(`Tradeoff: ${o.tradeoffs}`, 9, "italic", [161, 98, 7], margin + 12, contentWidth - 20);
+          if (o.tradeoffs)
+            writeText(
+              `Tradeoff: ${o.tradeoffs}`,
+              9,
+              "italic",
+              [161, 98, 7],
+              margin + 12,
+              contentWidth - 20,
+            );
 
           y = cardTop + cardHeight + 10;
           gap(6);
@@ -629,7 +775,8 @@ function ReportView({
       }
 
       // ── Footer on every page ───────────────────────────────────────────────
-      const totalPages = (doc.internal as { getNumberOfPages?: () => number }).getNumberOfPages?.() ?? 1;
+      const totalPages =
+        (doc.internal as { getNumberOfPages?: () => number }).getNumberOfPages?.() ?? 1;
       for (let p = 1; p <= totalPages; p++) {
         doc.setPage(p);
         setFill([248, 250, 252]);
@@ -638,7 +785,9 @@ function ReportView({
         doc.setFontSize(8);
         setColor(MUTED_TEXT);
         doc.text("Generated by Clean Start • cleanstart.app", margin, pageHeight - 10);
-        doc.text(`Page ${p} of ${totalPages}`, pageWidth - margin, pageHeight - 10, { align: "right" });
+        doc.text(`Page ${p} of ${totalPages}`, pageWidth - margin, pageHeight - 10, {
+          align: "right",
+        });
       }
 
       doc.save(`${filenameBase}.pdf`);
@@ -660,13 +809,19 @@ function ReportView({
       if (report.readiness_score !== null) {
         children.push(
           new Paragraph({
-            children: [new TextRun({ text: `Readiness: ${report.readiness_score}/100`, bold: true })],
+            children: [
+              new TextRun({ text: `Readiness: ${report.readiness_score}/100`, bold: true }),
+            ],
           }),
         );
       }
-      children.push(new Paragraph({ heading: HeadingLevel.HEADING_1, children: [new TextRun("Top options")] }));
+      children.push(
+        new Paragraph({ heading: HeadingLevel.HEADING_1, children: [new TextRun("Top options")] }),
+      );
       topOptions.forEach((o) => {
-        children.push(new Paragraph({ heading: HeadingLevel.HEADING_2, children: [new TextRun(o.title)] }));
+        children.push(
+          new Paragraph({ heading: HeadingLevel.HEADING_2, children: [new TextRun(o.title)] }),
+        );
         children.push(new Paragraph({ children: [new TextRun(o.why)] }));
         if (o.good_fit_when?.length) {
           children.push(
@@ -679,16 +834,23 @@ function ReportView({
         if (o.tradeoffs)
           children.push(
             new Paragraph({
-              children: [
-                new TextRun({ text: "Tradeoff: ", bold: true }),
-                new TextRun(o.tradeoffs),
-              ],
+              children: [new TextRun({ text: "Tradeoff: ", bold: true }), new TextRun(o.tradeoffs)],
             }),
           );
       });
-      children.push(new Paragraph({ heading: HeadingLevel.HEADING_1, children: [new TextRun("Key takeaways")] }));
+      children.push(
+        new Paragraph({
+          heading: HeadingLevel.HEADING_1,
+          children: [new TextRun("Key takeaways")],
+        }),
+      );
       insights.forEach((k) => children.push(new Paragraph({ children: [new TextRun(`• ${k}`)] })));
-      children.push(new Paragraph({ heading: HeadingLevel.HEADING_1, children: [new TextRun("Suggested next steps")] }));
+      children.push(
+        new Paragraph({
+          heading: HeadingLevel.HEADING_1,
+          children: [new TextRun("Suggested next steps")],
+        }),
+      );
       steps.forEach((s, i) => {
         children.push(
           new Paragraph({
@@ -698,9 +860,16 @@ function ReportView({
         );
         children.push(new Paragraph({ children: [new TextRun(s.detail)] }));
       });
-      children.push(new Paragraph({ heading: HeadingLevel.HEADING_1, children: [new TextRun("Resources to explore")] }));
+      children.push(
+        new Paragraph({
+          heading: HeadingLevel.HEADING_1,
+          children: [new TextRun("Resources to explore")],
+        }),
+      );
       resources.forEach((r) => {
-        children.push(new Paragraph({ heading: HeadingLevel.HEADING_2, children: [new TextRun(r.label)] }));
+        children.push(
+          new Paragraph({ heading: HeadingLevel.HEADING_2, children: [new TextRun(r.label)] }),
+        );
         children.push(new Paragraph({ children: [new TextRun(r.description)] }));
       });
 
@@ -725,7 +894,11 @@ function ReportView({
           <div className="flex items-center gap-2">
             {!isExample && onRegenerate && (
               <Button variant="outline" size="sm" onClick={onRegenerate} disabled={regenerating}>
-                {regenerating ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <Sparkles className="mr-1 h-4 w-4" />}
+                {regenerating ? (
+                  <Loader2 className="mr-1 h-4 w-4 animate-spin" />
+                ) : (
+                  <Sparkles className="mr-1 h-4 w-4" />
+                )}
                 Regenerate
               </Button>
             )}
@@ -752,11 +925,16 @@ function ReportView({
           <div className="flex items-center gap-2">
             <Leaf className="h-5 w-5 text-primary-dark" />
             <span className="text-sm font-medium text-primary-dark">Clean Start</span>
-            {isExample && <Badge variant="secondary" className="ml-2">Example</Badge>}
+            {isExample && (
+              <Badge variant="secondary" className="ml-2">
+                Example
+              </Badge>
+            )}
           </div>
           <h1 className="mt-3 text-3xl font-semibold tracking-tight">Your research summary</h1>
           <p className="mt-2 max-w-xl text-sm text-muted-foreground">
-            A calm overview of what we discussed, what fits your situation, and small steps you can take next.
+            A calm overview of what we discussed, what fits your situation, and small steps you can
+            take next.
           </p>
           {report.readiness_score !== null && (
             <div className="mt-5">
@@ -839,7 +1017,8 @@ function ReportView({
         </Section>
 
         <p className="mt-10 text-center text-xs text-muted-foreground">
-          Generated for guidance — always verify details with qualified local pros before committing to a project.
+          Generated for guidance — always verify details with qualified local pros before committing
+          to a project.
         </p>
       </div>
     </>
@@ -873,7 +1052,8 @@ function reportToMarkdown(
   const { topOptions, insights, steps, resources } = parsed;
   const lines: string[] = [];
   lines.push("# Clean Start — Your Research Summary", "");
-  if (report.readiness_score !== null) lines.push(`**Readiness:** ${report.readiness_score}/100`, "");
+  if (report.readiness_score !== null)
+    lines.push(`**Readiness:** ${report.readiness_score}/100`, "");
   lines.push("## Top options");
   topOptions.forEach((o) => {
     lines.push(`### ${o.title}`, "", o.why, "");
@@ -924,14 +1104,17 @@ function reportToHtml(
       o.good_fit_when.forEach((g) => parts.push(`<li>${e(g)}</li>`));
       parts.push(`</ul>`);
     }
-    if (o.tradeoffs) parts.push(`<p class="tradeoff"><strong>Tradeoff:</strong> ${e(o.tradeoffs)}</p>`);
+    if (o.tradeoffs)
+      parts.push(`<p class="tradeoff"><strong>Tradeoff:</strong> ${e(o.tradeoffs)}</p>`);
   });
   parts.push(`<h2>Key takeaways</h2><ul>`);
   insights.forEach((k) => parts.push(`<li>${e(k)}</li>`));
   parts.push(`</ul><h2>Suggested next steps</h2><ol>`);
   steps.forEach((s) => parts.push(`<li><strong>${e(s.step)}</strong> — ${e(s.detail)}</li>`));
   parts.push(`</ol><h2>Resources to explore</h2><ul>`);
-  resources.forEach((r) => parts.push(`<li><strong>${e(r.label)}</strong> — ${e(r.description)}</li>`));
+  resources.forEach((r) =>
+    parts.push(`<li><strong>${e(r.label)}</strong> — ${e(r.description)}</li>`),
+  );
   parts.push(`</ul></body></html>`);
   return parts.join("");
 }

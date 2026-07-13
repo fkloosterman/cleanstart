@@ -84,9 +84,9 @@ function Landing() {
           </h1>
 
           <p className="mt-6 max-w-2xl text-balance text-base text-muted-foreground sm:text-lg">
-            Clean Start is a conversational guide that helps households understand solar,
-            heat pumps, EVs, and efficiency upgrades — at your own pace, with no jargon
-            and no sales pressure.
+            Clean Start is a conversational guide that helps households understand solar, heat
+            pumps, EVs, and efficiency upgrades — at your own pace, with no jargon and no sales
+            pressure.
           </p>
 
           <div className="mt-9 flex flex-wrap items-center justify-center gap-3">
@@ -128,8 +128,8 @@ function Landing() {
               A calmer way to learn what's right for your home.
             </h2>
             <p className="mt-4 text-muted-foreground">
-              No quotes, no lead forms, no upsells — just guided education designed
-              around your situation.
+              No quotes, no lead forms, no upsells — just guided education designed around your
+              situation.
             </p>
           </div>
 
@@ -160,8 +160,8 @@ function Landing() {
             Ready to make sense of clean energy?
           </h2>
           <p className="mx-auto mt-3 max-w-xl text-muted-foreground">
-            Start a conversation now — or peek at an example research report to see
-            what you'll walk away with.
+            Start a conversation now — or peek at an example research report to see what you'll walk
+            away with.
           </p>
           <div className="mt-7 flex flex-wrap items-center justify-center gap-3">
             <Button asChild size="lg">

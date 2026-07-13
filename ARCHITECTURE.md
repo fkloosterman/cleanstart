@@ -6,7 +6,7 @@ Clean Start is a chat-based guide that helps people explore clean energy options
 
 ## 1. Where we came from
 
-The app was originally built with [Lovable](https://lovable.dev), an AI-assisted app builder. Lovable didn't just generate the code — it also *managed the infrastructure the app ran on*:
+The app was originally built with [Lovable](https://lovable.dev), an AI-assisted app builder. Lovable didn't just generate the code — it also _managed the infrastructure the app ran on_:
 
 - **Database**: Lovable automatically provisioned a [Supabase](https://supabase.com) database (Postgres) for the project.
 - **AI model**: Chat replies were generated through Lovable's own "AI Gateway," which proxied requests to Google's Gemini model.
@@ -15,20 +15,20 @@ The app was originally built with [Lovable](https://lovable.dev), an AI-assisted
 
 This worked well for one person building solo, but created two problems once more people wanted to contribute:
 
-1. Any usage (chatting, testing) consumed the *project owner's* Lovable credits — there was no way to spread that cost or give a teammate their own account for it.
+1. Any usage (chatting, testing) consumed the _project owner's_ Lovable credits — there was no way to spread that cost or give a teammate their own account for it.
 2. Contributors were implicitly required to use Lovable itself, since nothing could be run or tested outside of it.
 
 ## 2. The migration
 
 To make the app independent of any one person's Lovable account, we replaced each Lovable-managed piece with an equivalent, independently-owned service:
 
-| Piece | Before | Now |
-|---|---|---|
-| Database & user accounts | Lovable-provisioned Supabase project | Our own [Supabase](https://supabase.com) project |
-| AI model access | Lovable's AI Gateway (Gemini only) | [OpenRouter](https://openrouter.ai) (many models, currently a free one) |
-| Sign-in (Google, etc.) | Lovable's auth proxy | Supabase's built-in sign-in, directly |
-| Hosting | Lovable Cloud | [Vercel](https://vercel.com) |
-| Local testing | Not possible without Lovable | Fully possible on any developer's machine |
+| Piece                    | Before                               | Now                                                                     |
+| ------------------------ | ------------------------------------ | ----------------------------------------------------------------------- |
+| Database & user accounts | Lovable-provisioned Supabase project | Our own [Supabase](https://supabase.com) project                        |
+| AI model access          | Lovable's AI Gateway (Gemini only)   | [OpenRouter](https://openrouter.ai) (many models, currently a free one) |
+| Sign-in (Google, etc.)   | Lovable's auth proxy                 | Supabase's built-in sign-in, directly                                   |
+| Hosting                  | Lovable Cloud                        | [Vercel](https://vercel.com)                                            |
+| Local testing            | Not possible without Lovable         | Fully possible on any developer's machine                               |
 
 Along the way we also found and fixed a few pre-existing bugs this work surfaced (e.g. new chat sessions weren't always being saved correctly, and conversations weren't getting proper titles) — these weren't related to the migration itself, just issues that testing uncovered.
 
@@ -67,27 +67,48 @@ Along the way we also found and fixed a few pre-existing bugs this work surfaced
 ### 3.2 A typical request
 
 When someone sends a chat message:
+
 1. The browser sends the message to a small piece of server code running on Vercel.
 2. That server code checks who the user is (via Supabase), saves the message to the database, and asks OpenRouter to generate a reply.
 3. The reply streams back to the browser as it's generated, and is also saved to the database once complete.
 
 ### 3.3 Where you can run this
 
-The exact same codebase now runs in two places:
+The exact same codebase now runs in three places:
+
 - **Locally**, on any developer's own computer, for day-to-day development — see `ONBOARDING.md` for setup.
-- **In production**, on Vercel, for real users.
+- **On staging**, deployed automatically by Vercel from the `dev` branch, for testing integrated work before it reaches users.
+- **In production**, on Vercel, built from the `mvp` branch, for real users.
 
 There's no Lovable-based editing on this codebase going forward; Lovable remains connected to a separate, unrelated repo (`jreddy777/cleanstart`) that this project doesn't sync with. See `AGENTS.md` for the branch/contribution model.
 
-**Important**: both of the above currently point at the *same* Supabase database. This is convenient, but it means everyone is sharing one live dataset. Structural changes to the database (adding/removing/renaming tables or fields) need to be made deliberately and coordinated with the team — a change made by one person immediately affects everyone else using the same database.
+**Two databases.** There are two separate Supabase projects:
+
+- a **dev project**, used by local development and the staging deployment. It contains no real user data, so developers can experiment freely — including destructive database experiments — without coordinating with anyone.
+- a **production project**, used only by the production deployment. It holds real user data and is changed only deliberately, at release time ("promotion" of `dev` into `mvp`), by one person following the process in `DATABASE.md`.
+
+This means a mistake during development can no longer touch real users' data.
 
 ### 3.4 Secrets and configuration
 
 The app needs a handful of credentials to run, split into two kinds:
+
 - **Public values** (safe to have in a local config file): the Supabase project's public web address and public API key.
 - **Private secrets** (never shared or committed to code): a Supabase key that bypasses normal access rules (used only by server-side code), and the OpenRouter API key.
 
-See `.env.example` in the repo for the full list and where each one goes. In production, these are configured directly in Vercel's project settings.
+See `.env.example` in the repo for the full list and where each one goes. In Vercel, these are configured per environment:
+
+- The **Production** environment's variables point at the production Supabase project.
+- In the **Preview** environment, **branch-scoped** variables for the `dev` branch point at the dev Supabase project — that's what makes the staging deployment safe.
+- **All other preview deployments** (PRs from `wp/*` branches, PRs into `mvp`) fall through to the global Preview values, which — transitionally — still point at the **production** project, so that teammates with in-flight mvp-based work keep their current preview behavior.
+
+**Transitional rule, until the global Preview values are flipped to the dev project:** don't use the Vercel preview of a `wp/*` feature branch to test against a database — it runs against production. Test locally (your `.env` → dev project) and on the `dev` staging deployment after merge. If a specific feature branch genuinely needs a working preview, add branch-scoped Preview variables for that exact branch name in Vercel, pointing at the dev project.
+
+This rule is enforced in code, not just by convention: `src/lib/preview-guard.ts` detects a _preview_ deployment configured with the _production_ database, makes the database-touching server endpoints refuse with a clear message, and shows a warning banner in the app. (Branches cut from `mvp` don't contain this guard, so existing mvp-based previews are unaffected.) Once the global Preview variables point at the dev project the condition can never be true, and the guard and its call sites should be deleted.
+
+**Hard deadline for the flip:** before the first Phase 1 migration (WP1.2) merges to `dev`. From that point, feature-branch code expects schema the production database doesn't have, so previews falling through to prod values would be broken at best. When mvp-based feature work has wound down, flip the global Preview variables to the dev project and delete the transitional branch scopes.
+
+Local `.env` files point at the dev project (developers still finishing mvp-based work may keep prod values until they switch to `dev`-based work).
 
 ## 4. Where things stand / what's next
 

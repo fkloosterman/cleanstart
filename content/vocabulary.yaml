@@ -1,0 +1,44 @@
+# Content tag vocabulary — the single, CI-validated source of truth for the
+# open targeting axes (design §3.1, §11). Adding a tag is ONE line here; the
+# content validator (`bun run validate:content`) rejects any component, media,
+# or preset that uses a tag not listed below.
+#
+# NOT in this file (deliberately):
+#   - lanes        — a code registry (src/lib/lanes/playbooks.ts LANE_IDS);
+#                    adding a lane is an expensive library-wide backfill, not a
+#                    one-line data edit (§11), so it never lives here.
+#   - kinds, effort, impact levels, tenures, status — closed enums fixed in the
+#                    Zod schema (src/lib/content/schema.ts); they don't grow.
+#   - regions      — prefix-matched free identifiers (e.g. "US", "US-VA"); the
+#                    validator checks their *format*, not membership, because
+#                    the set is open by design.
+#
+# Never repurpose an existing tag to mean something new (§11) — retire it and
+# add a fresh one instead.
+
+# Technologies a component/preset can target. Empty `technologies: []` on a
+# component means "applies regardless of technology".
+technologies:
+  - solar
+  - heat-pump
+  - water-heater
+  - ev
+  - ev-charger
+  - insulation
+  - air-sealing
+  - windows
+  - battery-storage
+  - smart-thermostat
+  - induction-cooking
+  - behavior
+  - weatherization
+  - lighting
+
+# Housing types a component can target. Empty `housing_types: []` means
+# "applies to any home".
+housing_types:
+  - single-family
+  - apartment
+  - condo
+  - townhouse
+  - mobile

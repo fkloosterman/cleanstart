@@ -1,0 +1,15 @@
+slug: heat-pump-vs-furnace
+label: Heat pump vs furnace
+category: Heat pumps
+first_message: How does a heat pump compare to my gas furnace?
+profile_patches:
+  - op: append
+    slot: preferences
+    provenance: stated
+    value:
+      entity: tech:heat-pump
+      stance: curious
+      provenance: stated
+tenures: [owner]
+regions:
+  - US

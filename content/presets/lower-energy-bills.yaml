@@ -1,0 +1,28 @@
+slug: lower-energy-bills
+label: Lower my energy bills
+category: Save money
+first_message: I want to lower my energy bills. Where should I start?
+# Warm-starts the profile: leans motivation toward cost and records a
+# heat-pump curiosity so the first agent turn already has context (§3.6).
+profile_patches:
+  - op: set
+    slot: motivation_weights
+    provenance: stated
+    value:
+      cost: 1
+      carbon: 0.2
+      comfort: 0.3
+      resilience: 0.2
+      learning: 0.2
+  - op: append
+    slot: preferences
+    provenance: stated
+    value:
+      entity: tech:heat-pump
+      stance: curious
+      provenance: stated
+tenures:
+  - owner
+  - renter
+regions:
+  - US

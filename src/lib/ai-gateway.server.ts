@@ -1,21 +1,22 @@
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
+import { applyRoutingPreferences, resolveModelConfig, type ModelPurpose } from "@/lib/model-map";
 
 const DEFAULT_OPENROUTER_URL = "https://openrouter.ai/api/v1";
-const DEFAULT_OPENROUTER_MODEL = "openai/gpt-oss-120b:free";
 
-// Free models are individually rate-limited upstream and can 429 under load
-// (documented OpenRouter behavior, not our own quota). These are fallback
-// candidates OpenRouter tries in order if the primary model errors/rate-limits
-// — see https://openrouter.ai/docs/guides/routing/model-fallbacks
-const FREE_MODEL_FALLBACKS = [
-  "openai/gpt-oss-120b:free",
-  "openai/gpt-oss-20b:free",
-  "google/gemma-4-31b-it:free",
-];
-
-export function createOpenRouterProvider(openRouterApiKey: string) {
+/**
+ * Create a model instance for a declared purpose (chat / extraction /
+ * composition). Which model serves each purpose — and whether the call is
+ * restricted to ZDR/no-training endpoints — is environment configuration;
+ * see src/lib/model-map.ts and .env.example.
+ */
+export function createModelForPurpose(purpose: ModelPurpose, openRouterApiKey: string) {
+  const config = resolveModelConfig(purpose, process.env);
+  // `||` not `??`: an empty OPENROUTER_URL (the .env.example default) means
+  // "unset", same as model-map treats the model vars — otherwise the base URL
+  // becomes "" and every request URL fails to parse.
   const baseURL = process.env.OPENROUTER_URL || DEFAULT_OPENROUTER_URL;
-  return createOpenAICompatible({
+
+  const provider = createOpenAICompatible({
     name: "openrouter",
     baseURL,
     headers: {
@@ -25,33 +26,16 @@ export function createOpenRouterProvider(openRouterApiKey: string) {
       "HTTP-Referer": "https://cleanstart-smoky.vercel.app",
       "X-Title": "Clean Start",
     },
-    // Inject OpenRouter's `models` fallback list into every request body so a
-    // rate-limited/erroring primary model automatically falls through to the
-    // next free model instead of failing the whole request.
+    // Rewrite each request body with the purpose's routing config: the free
+    // fallback chain (so a rate-limited free primary falls through instead of
+    // failing the request) and/or ZDR provider preferences.
     fetch: async (input, init) => {
       if (init?.body && typeof init.body === "string") {
-        try {
-          const parsed = JSON.parse(init.body) as { model?: string };
-          const primary = parsed.model;
-          const models = primary
-            ? [primary, ...FREE_MODEL_FALLBACKS.filter((m) => m !== primary)]
-            : FREE_MODEL_FALLBACKS;
-          init = { ...init, body: JSON.stringify({ ...parsed, models }) };
-        } catch {
-          // Body wasn't JSON (shouldn't happen for this API) — send as-is.
-        }
+        init = { ...init, body: applyRoutingPreferences(init.body, config) };
       }
       return fetch(input, init);
     },
   });
-}
 
-/**
- * Convenience helper: creates the provider and immediately returns a model
- * instance using the OPENROUTER_MODEL env var (falls back to the default
- * primary model if the var is unset).
- */
-export function createOpenRouterModel(openRouterApiKey: string) {
-  const modelId = process.env.OPENROUTER_MODEL || DEFAULT_OPENROUTER_MODEL;
-  return createOpenRouterProvider(openRouterApiKey)(modelId);
+  return provider(config.modelId);
 }

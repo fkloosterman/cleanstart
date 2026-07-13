@@ -10,7 +10,7 @@
 > running.
 
 > **For the AI agent running this doc:** this file is written to be followed
-> *with* a human, not read by one alone. You cannot exist or run yet during
+> _with_ a human, not read by one alone. You cannot exist or run yet during
 > Phase 0 below — nothing in Claude Desktop can happen until the repo is
 > cloned locally and opened in the Claude Code tab, so Phase 0 is 100%
 > manual, no agent involved. You pick up starting at Phase 1, once the user
@@ -18,6 +18,7 @@
 > you to continue their setup.
 >
 > From Phase 1 onward, for each step:
+>
 > - If it's a shell command, run it yourself and check the result before
 >   moving on. Don't batch multiple install steps together — verify each one
 >   before starting the next, since later steps assume earlier ones worked.
@@ -37,10 +38,11 @@
 > branch (cloning lands you there automatically). There's a separate
 > `jreddy777/cleanstart` repo with its own Lovable-connected `main` branch,
 > but it's unrelated to this workflow — we don't sync with or merge from/into
-> it, and there's no Lovable-based editing here. Both `main` and `mvp` on
+> it, and there's no Lovable-based editing here. `main`, `mvp`, and `dev` on
 > this repo are protected via GitHub branch rulesets — no direct or force
-> pushes, everything lands via PR. Feature branches branch off `mvp` and PR
-> back into `mvp`.
+> pushes, everything lands via PR. Feature branches branch off **`dev`**
+> (the integration/staging branch) and PR back into `dev`; `mvp` changes
+> only by promotion from `dev` or by hotfix — see `AGENTS.md`.
 
 ## Phase 0 — Before any agent can help (do this yourself)
 
@@ -71,8 +73,8 @@ order.
 
 6. **Open the repo in Claude Code.** In Claude Desktop, open the Claude Code
    tab and open the folder you just cloned. Then send it a message like:
-   *"Follow ONBOARDING.md in this repo to finish setting up my machine,
-   starting at Phase 1."*
+   _"Follow ONBOARDING.md in this repo to finish setting up my machine,
+   starting at Phase 1."_
 
 Everything below this point is meant to be driven by that agent, not done by
 hand.
@@ -84,18 +86,22 @@ hand.
    options, then open a **new** PowerShell window (nvm won't be on `PATH` in
    an already-open terminal).
    Then run:
+
    ```
    nvm install 22
    nvm use 22
    ```
+
    Verify: run `node --version` (should print a `v22.x.x` version) and
    `npm --version`.
 
 2. **Bun** — this project's package manager (`bun.lock`, `bunfig.toml`).
    Install via PowerShell:
+
    ```
    powershell -c "irm bun.sh/install.ps1 | iex"
    ```
+
    Then open a new terminal window so `bun` is on `PATH`.
    Verify: run `bun --version`.
 
@@ -107,19 +113,22 @@ hand.
 
    First, tell the user to request the following from whoever's running the
    project, and wait for them to confirm they have each before moving on:
-   - **Supabase**: either the project's `VITE_SUPABASE_URL` /
+   - **Supabase**: either the **dev** project's `VITE_SUPABASE_URL` /
      `VITE_SUPABASE_PUBLISHABLE_KEY` / `SUPABASE_SERVICE_ROLE_KEY` values
-     directly, or dashboard access to the Supabase project to pull them
-     themselves.
+     directly, or dashboard access to the dev Supabase project to pull them
+     themselves. (Local development always points at the dev project —
+     never at the production one; see `ARCHITECTURE.md`.)
    - **OpenRouter**: an `OPENROUTER_API_KEY`, or their own key if they're
      meant to provision one.
    - **Vercel**: added as a member on the Vercel project/team, so they can
      see deployment logs and PR preview URLs.
 
    Then copy the env template:
+
    ```
    copy .env.example .env
    ```
+
    Tell the user to open `.env` in their editor and fill in the values they
    just gathered:
    - `VITE_SUPABASE_URL`, `VITE_SUPABASE_PUBLISHABLE_KEY`,
@@ -136,15 +145,19 @@ hand.
    Verify: ask the user to confirm all fields in `.env` are filled in.
 
 5. **Install dependencies.** From the repo folder:
+
    ```
    bun install
    ```
+
    Verify: command exits 0 and a `node_modules` folder now exists.
 
 6. **Run it locally.**
+
    ```
    bun run dev
    ```
+
    Open the printed local URL and confirm with the user that the app loads
    and they can sign in.
 
@@ -160,10 +173,12 @@ Walk the user through this once end-to-end on a small change so they've seen
 the whole loop before doing it solo.
 
 1. **Sync and branch**
-   Make sure the local repo is up to date with `mvp`, then create a feature
-   branch off it:
+   Make sure the local repo is up to date with `dev`, then create a feature
+   branch off it (work-package branches are named `wp/<id>-<slug>`; for
+   other small changes any short descriptive name works):
+
    ```
-   git checkout mvp
+   git checkout dev
    git pull
    git checkout -b your-name-short-feature-description
    ```
@@ -174,28 +189,34 @@ the whole loop before doing it solo.
    has repo-specific context Claude Code picks up automatically.
 
 3. **Test locally**
+
    ```
    bun run dev      # exercise the feature in the browser
    bun run lint      # catch lint errors
+   bun run test      # run the automated test suite
    ```
-   Manually click through the feature and any adjacent flows that were
-   touched — there's no automated test suite yet, so this is the main
-   safety net.
+
+   Also manually click through the feature and any adjacent flows that
+   were touched — automated coverage is mandatory for pure logic modules
+   but optional for UI components (see `AGENTS.md`), so manual testing is
+   still the main safety net for UI changes.
 
 4. **Commit**
+
    ```
    git add -A
    git commit -m "Short description of the change"
    ```
 
 5. **Push**
+
    ```
    git push -u origin your-name-short-feature-description
    ```
 
 6. **Open a PR**
    In GitHub Desktop, click "Create Pull Request" (or on github.com), base
-   branch `mvp`, compare branch the new feature branch. Fill in a short
+   branch `dev`, compare branch the new feature branch. Fill in a short
    description of what changed and why.
 
 7. **Check the Vercel preview**
@@ -206,4 +227,7 @@ the whole loop before doing it solo.
 
 8. **Merge**
    Once the preview looks good (and any review feedback is addressed),
-   merge the PR into `mvp`. Vercel redeploys production automatically.
+   squash-merge the PR into `dev` and delete the branch. Vercel redeploys
+   the staging environment automatically. The change reaches production
+   later, when `dev` is promoted into `mvp` (see `AGENTS.md`) — feature
+   PRs never deploy straight to production.

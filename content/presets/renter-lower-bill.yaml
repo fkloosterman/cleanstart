@@ -1,0 +1,17 @@
+slug: renter-lower-bill
+label: Lower my energy bill
+category: Efficiency
+first_message: How can I lower my energy bill as a renter?
+profile_patches:
+  - op: set
+    slot: motivation_weights
+    provenance: stated
+    value:
+      cost: 1
+      carbon: 0.2
+      comfort: 0.3
+      resilience: 0.2
+      learning: 0.2
+tenures: [renter]
+regions:
+  - US

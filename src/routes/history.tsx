@@ -105,7 +105,11 @@ function HistoryPage() {
           </p>
         </div>
         <Button onClick={handleNewSession} disabled={creating}>
-          {creating ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <Plus className="mr-1 h-4 w-4" />}
+          {creating ? (
+            <Loader2 className="mr-1 h-4 w-4 animate-spin" />
+          ) : (
+            <Plus className="mr-1 h-4 w-4" />
+          )}
           New conversation
         </Button>
       </div>
@@ -148,14 +152,22 @@ function HistoryPage() {
                     <div className="flex items-center gap-2">
                       <h3 className="truncate font-medium">{s.title}</h3>
                       {isCurrent && (
-                        <Badge variant="outline" className="shrink-0 border-primary text-primary-dark">Current</Badge>
+                        <Badge
+                          variant="outline"
+                          className="shrink-0 border-primary text-primary-dark"
+                        >
+                          Current
+                        </Badge>
                       )}
                       {s.is_complete && (
-                        <Badge variant="secondary" className="shrink-0">Complete</Badge>
+                        <Badge variant="secondary" className="shrink-0">
+                          Complete
+                        </Badge>
                       )}
                     </div>
                     <p className="mt-1 text-xs text-muted-foreground">
-                      {new Date(s.updated_at).toLocaleString()} · {msgCount} message{msgCount === 1 ? "" : "s"}
+                      {new Date(s.updated_at).toLocaleString()} · {msgCount} message
+                      {msgCount === 1 ? "" : "s"}
                     </p>
                   </div>
                   <div className="flex items-center gap-1">

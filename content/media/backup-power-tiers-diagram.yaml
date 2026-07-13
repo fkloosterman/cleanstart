@@ -1,0 +1,12 @@
+slug: backup-power-tiers-diagram
+kind: diagram
+storage_path: media/backup-power-tiers-diagram.svg
+alt: Three tiers of outage backup — a portable power station, a home battery, and solar paired with a battery — increasing in capacity
+caption: Resilience is a ladder, from a portable station to solar plus a battery.
+credit:
+  source: CleanStart original
+  license: CC-BY-4.0
+technologies:
+  - battery-storage
+regions:
+  - US

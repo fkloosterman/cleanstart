@@ -1,9 +1,37 @@
 import { useState, type ReactNode } from "react";
-import { Link } from "@tanstack/react-router";
-import { Menu, X } from "lucide-react";
+import { Link, useNavigate, useLocation } from "@tanstack/react-router";
+import { Menu, TriangleAlert, X } from "lucide-react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/use-auth";
+import { useGuestMigration } from "@/hooks/use-guest-migration";
 import { AuthModal } from "@/components/AuthModal";
+import { previewGuardMessage } from "@/lib/preview-guard";
+
+// Where sign-out lands, by current route. Pages that look the same for guests
+// and signed-in users (home, resources, about, the guest chat start, the
+// example/guest/bare report views) stay put; pages that gate or differ for a
+// signed-out user funnel to the guest chat — the natural "keep using the app"
+// destination.
+function signOutRedirect(pathname: string, search: Record<string, unknown>): "/chat" | null {
+  if (pathname.startsWith("/chat/")) return "/chat"; // a specific session
+  if (pathname === "/history" || pathname.startsWith("/history/")) return "/chat";
+  // Only the authenticated report view (a sessionId, without example/guest)
+  // walls a signed-out user; the example, guest, and bare /report pages render
+  // fine without auth.
+  if (pathname === "/report" && search.sessionId && !search.example && !search.guest) {
+    return "/chat";
+  }
+  return null; // stay put
+}
+
+// Vercel inlines VITE_-prefixed system env vars into the client bundle (when
+// "Automatically expose System Environment Variables" is enabled); locally
+// VITE_VERCEL_ENV is undefined and the guard stays silent.
+const PREVIEW_WARNING = previewGuardMessage({
+  VERCEL_ENV: import.meta.env.VITE_VERCEL_ENV as string | undefined,
+  SUPABASE_URL: import.meta.env.VITE_SUPABASE_URL as string | undefined,
+});
 
 const NAV = [
   { to: "/", label: "Home" },
@@ -13,11 +41,25 @@ const NAV = [
   { to: "/about", label: "About" },
 ] as const;
 
-
 export function AppShell({ children }: { children: ReactNode }) {
   const { user, signOut, loading } = useAuth();
+  const navigate = useNavigate();
+  const location = useLocation();
   const [authOpen, setAuthOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  // Migrate a guest's conversation + profile into their account on sign-in,
+  // from whatever route auth lands on (WP1.9, incl. the OAuth/email-confirm
+  // redirects). Mounted here because AppShell wraps every route.
+  useGuestMigration();
+
+  // Sign out, confirm it, and redirect away from any page that would now wall
+  // the user (session/history) — otherwise leave them where they are.
+  const handleSignOut = async () => {
+    await signOut();
+    toast.success("Signed out");
+    const dest = signOutRedirect(location.pathname, location.search as Record<string, unknown>);
+    if (dest) navigate({ to: dest });
+  };
   const nav = NAV.filter((n) => n.to !== "/history" || user);
 
   return (
@@ -46,9 +88,13 @@ export function AppShell({ children }: { children: ReactNode }) {
 
           <div className="hidden items-center gap-2 md:flex">
             {loading ? null : user ? (
-              <Button variant="ghost" size="sm" onClick={signOut}>Sign out</Button>
+              <Button variant="ghost" size="sm" onClick={handleSignOut}>
+                Sign out
+              </Button>
             ) : (
-              <Button size="sm" onClick={() => setAuthOpen(true)}>Sign in</Button>
+              <Button size="sm" onClick={() => setAuthOpen(true)}>
+                Sign in
+              </Button>
             )}
           </div>
 
@@ -77,11 +123,26 @@ export function AppShell({ children }: { children: ReactNode }) {
               ))}
               <div className="mt-2 border-t border-border pt-3">
                 {user ? (
-                  <Button variant="ghost" size="sm" className="w-full justify-start" onClick={() => { setMenuOpen(false); signOut(); }}>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="w-full justify-start"
+                    onClick={() => {
+                      setMenuOpen(false);
+                      handleSignOut();
+                    }}
+                  >
                     Sign out
                   </Button>
                 ) : (
-                  <Button size="sm" className="w-full" onClick={() => { setMenuOpen(false); setAuthOpen(true); }}>
+                  <Button
+                    size="sm"
+                    className="w-full"
+                    onClick={() => {
+                      setMenuOpen(false);
+                      setAuthOpen(true);
+                    }}
+                  >
                     Sign in
                   </Button>
                 )}
@@ -91,12 +152,21 @@ export function AppShell({ children }: { children: ReactNode }) {
         )}
       </header>
 
+      {PREVIEW_WARNING && (
+        <div className="border-b border-amber-300 bg-amber-100 px-4 py-2 text-center text-sm font-medium text-amber-900">
+          <TriangleAlert className="mr-1.5 inline h-4 w-4 align-text-bottom" />
+          {PREVIEW_WARNING}
+        </div>
+      )}
+
       <main className="flex-1">{children}</main>
 
       <footer className="border-t border-border bg-background py-6">
         <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-2 px-4 text-xs text-muted-foreground sm:flex-row">
           <p>Privacy-first · Vendor-neutral · © 2026 Clean Start</p>
-          <Link to="/privacy" className="hover:text-foreground">Privacy &amp; Terms of Service</Link>
+          <Link to="/privacy" className="hover:text-foreground">
+            Privacy &amp; Terms of Service
+          </Link>
         </div>
       </footer>
 

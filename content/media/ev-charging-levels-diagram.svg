@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 360" role="img"
+     aria-label="Comparison of EV charging levels: Level 1 from a standard outlet is slowest, Level 2 is faster, and DC fast charging is fastest">
+  <rect x="0" y="0" width="640" height="360" rx="16" fill="#f8fafc"/>
+  <style>
+    .lbl{font:600 15px system-ui,sans-serif;fill:#0f172a}
+    .name{font:800 14px system-ui,sans-serif;fill:#0f172a}
+    .sub{font:12px system-ui,sans-serif;fill:#475569}
+    .cap{font:700 13px system-ui,sans-serif;fill:#0369a1}
+  </style>
+
+  <text x="320" y="40" text-anchor="middle" class="lbl">How fast an EV charges depends on the source</text>
+
+  <!-- Level 1 -->
+  <text x="60" y="98" class="name">Level 1</text>
+  <text x="60" y="116" class="sub">standard 120V outlet</text>
+  <rect x="200" y="84" width="90" height="26" rx="6" fill="#bae6fd" stroke="#38bdf8"/>
+  <text x="470" y="103" class="sub">~3–5 miles of range per hour</text>
+
+  <!-- Level 2 -->
+  <text x="60" y="178" class="name">Level 2</text>
+  <text x="60" y="196" class="sub">240V (dryer-type) circuit</text>
+  <rect x="200" y="164" width="240" height="26" rx="6" fill="#7dd3fc" stroke="#0ea5e9"/>
+  <text x="470" y="183" class="sub">~20–30 miles per hour</text>
+
+  <!-- DC fast -->
+  <text x="60" y="258" class="name">DC fast</text>
+  <text x="60" y="276" class="sub">public fast charger</text>
+  <rect x="200" y="244" width="380" height="26" rx="6" fill="#0369a1" stroke="#075985"/>
+  <text x="200" y="300" class="sub">10–80% in ~20–40 min on capable cars</text>
+
+  <text x="320" y="335" text-anchor="middle" class="cap">Most owners charge at home overnight; fast charging covers long trips.</text>
+</svg>

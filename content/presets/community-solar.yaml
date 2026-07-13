@@ -1,0 +1,15 @@
+slug: community-solar
+label: Community solar
+category: Community solar
+first_message: How does community solar work for renters?
+profile_patches:
+  - op: append
+    slot: preferences
+    provenance: stated
+    value:
+      entity: tech:solar
+      stance: curious
+      provenance: stated
+tenures: [renter]
+regions:
+  - US
