@@ -25,6 +25,7 @@ import {
   Sparkles,
 } from "lucide-react";
 import { toast } from "sonner";
+import { supabase } from "@/integrations/supabase/client";
 import { generateReport, getReport } from "@/lib/report.functions";
 import { generateGuestReport } from "@/lib/guest-report.functions";
 import { readGuestReport, writeGuestReport } from "@/lib/guest-storage";
@@ -139,27 +140,41 @@ function ReportSurface({
   isExample,
   onRegenerate,
   regenerating,
+  latestMessageAt,
 }: {
   report: ReportRow;
   isExample?: boolean;
   onRegenerate?: () => void;
   regenerating?: boolean;
+  latestMessageAt?: string | null;
 }) {
   const document = parseReportDocument(report.document);
   if (document) {
+    // The report is a snapshot; it is stale once the conversation continued
+    // past its generation time (`meta.generated_at`, refreshed on every
+    // compose — the row's created_at is not bumped on update).
+    const stale = !!latestMessageAt && latestMessageAt > document.meta.generated_at;
     return (
       <>
         <PrivacyBanner />
-        <ReportDocumentView document={document} isExample={isExample} />
+        <ReportDocumentView
+          document={document}
+          isExample={isExample}
+          onRegenerate={onRegenerate}
+          regenerating={regenerating}
+          stale={stale}
+        />
       </>
     );
   }
+  const stale = !!latestMessageAt && !!report.created_at && latestMessageAt > report.created_at;
   return (
     <ReportView
       report={report}
       isExample={isExample}
       onRegenerate={onRegenerate}
       regenerating={regenerating}
+      stale={stale}
     />
   );
 }
@@ -176,12 +191,27 @@ function ReportPage() {
   const [loading, setLoading] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // The session's most recent message time — compared against the report's
+  // generation time to tell whether the conversation has moved past it.
+  const [latestMessageAt, setLatestMessageAt] = useState<string | null>(null);
 
   useEffect(() => {
     if (example || !sessionId || !user) return;
     setLoading(true);
-    fetchReport({ data: { sessionId } })
-      .then((r) => setReport((r as ReportRow | null) ?? null))
+    Promise.all([
+      fetchReport({ data: { sessionId } }),
+      supabase
+        .from("messages")
+        .select("created_at")
+        .eq("session_id", sessionId)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+    ])
+      .then(([r, latest]) => {
+        setReport((r as ReportRow | null) ?? null);
+        setLatestMessageAt(latest.data?.created_at ?? null);
+      })
       .catch((e) => setError(e instanceof Error ? e.message : "Couldn't load report"))
       .finally(() => setLoading(false));
   }, [sessionId, user, example, fetchReport]);
@@ -394,7 +424,14 @@ function ReportPage() {
     );
   }
 
-  return <ReportSurface report={report} onRegenerate={handleGenerate} regenerating={generating} />;
+  return (
+    <ReportSurface
+      report={report}
+      onRegenerate={handleGenerate}
+      regenerating={generating}
+      latestMessageAt={latestMessageAt}
+    />
+  );
 }
 
 function ReportView({
@@ -402,11 +439,13 @@ function ReportView({
   isExample,
   onRegenerate,
   regenerating,
+  stale,
 }: {
   report: ReportRow;
   isExample?: boolean;
   onRegenerate?: () => void;
   regenerating?: boolean;
+  stale?: boolean;
 }) {
   const topOptions = (report.top_options as Option[]) ?? [];
   const insights = (report.key_insights as string[]) ?? [];
@@ -893,13 +932,21 @@ function ReportView({
           </Button>
           <div className="flex items-center gap-2">
             {!isExample && onRegenerate && (
-              <Button variant="outline" size="sm" onClick={onRegenerate} disabled={regenerating}>
+              <Button
+                variant={stale ? "default" : "outline"}
+                size="sm"
+                onClick={onRegenerate}
+                disabled={regenerating}
+                title={
+                  stale ? "Your conversation continued after this report was generated" : undefined
+                }
+              >
                 {regenerating ? (
                   <Loader2 className="mr-1 h-4 w-4 animate-spin" />
                 ) : (
                   <Sparkles className="mr-1 h-4 w-4" />
                 )}
-                Regenerate
+                {stale ? "Update report" : "Regenerate"}
               </Button>
             )}
             <DropdownMenu>
