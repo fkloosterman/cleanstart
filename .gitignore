@@ -16,6 +16,10 @@ dist-ssr
 .nitro
 *.local
 .env
+# Per-environment secrets (.env.dev, .env.prod, …) — never commit; the
+# tracked template is .env.example.
+.env.*
+!.env.example
 
 # Wrangler / Cloudflare
 .wrangler/
