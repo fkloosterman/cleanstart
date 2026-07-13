@@ -5,8 +5,9 @@
  * of the page: the shared `projectReportDocument` block list drives them
  * all, so PDF, Word, Markdown and plain text stay in lockstep. The pure
  * projection and text renderers live in `@/lib/report/export` (unit-tested);
- * only the binary walkers (jsPDF, docx) live here, at the UI edge, and are
- * lazy-imported so their weight never lands in the main bundle.
+ * the PDF walker lives in `@/lib/report/export-pdf`; only the docx walker
+ * lives here, at the UI edge. Both binary libraries are lazy-imported so
+ * their weight never lands in the main bundle.
  *
  * The same component serves guest and signed-in reports — export is fully
  * client-side, so guest parity (§9) is automatic.
@@ -26,10 +27,10 @@ import {
   projectReportDocument,
   reportToMarkdown,
   reportToPlainText,
-  stripMarkdown,
+  plainText,
   REPORT_EXPORT_FILENAME_BASE,
-  type ExportBlock,
 } from "@/lib/report/export";
+import { renderReportPdf } from "@/lib/report/export-pdf";
 
 function triggerDownload(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob);
@@ -42,80 +43,8 @@ function triggerDownload(blob: Blob, filename: string) {
   URL.revokeObjectURL(url);
 }
 
-/** Flatten a block's prose to plain text, stripping Markdown when present. */
-function blockText(b: Extract<ExportBlock, { kind: "p" }>): string {
-  return b.markdown ? stripMarkdown(b.text) : b.text;
-}
-
 async function downloadPdf(doc: ReportDocument) {
-  const { jsPDF } = await import("jspdf");
-  const pdf = new jsPDF({ unit: "pt", format: "letter" });
-  const margin = 48;
-  const pageWidth = pdf.internal.pageSize.getWidth();
-  const pageHeight = pdf.internal.pageSize.getHeight();
-  const maxWidth = pageWidth - margin * 2;
-  let y = margin;
-
-  const ensureSpace = (h: number) => {
-    if (y + h > pageHeight - margin) {
-      pdf.addPage();
-      y = margin;
-    }
-  };
-  const write = (text: string, size: number, opts: { bold?: boolean; gray?: boolean } = {}) => {
-    pdf.setFont("helvetica", opts.bold ? "bold" : "normal");
-    pdf.setFontSize(size);
-    pdf.setTextColor(opts.gray ? 110 : 20);
-    const lines = pdf.splitTextToSize(text, maxWidth) as string[];
-    const lineHeight = size * 1.35;
-    for (const line of lines) {
-      ensureSpace(lineHeight);
-      pdf.text(line, margin, y);
-      y += lineHeight;
-    }
-  };
-  const gap = (h = 6) => {
-    y += h;
-  };
-
-  for (const b of projectReportDocument(doc)) {
-    switch (b.kind) {
-      case "h1":
-        write(b.text, 20, { bold: true });
-        gap(4);
-        break;
-      case "h2":
-        gap(10);
-        write(b.text, 14, { bold: true });
-        gap(2);
-        break;
-      case "h3":
-        gap(4);
-        write(b.text, 12, { bold: true });
-        break;
-      case "p":
-        write(blockText(b), 11);
-        gap(4);
-        break;
-      case "muted":
-        write(b.text, 10, { gray: true });
-        gap(2);
-        break;
-      case "bullet":
-        write(`•  ${b.text}`, 11);
-        break;
-      case "kv":
-        write(`${b.label}: ${b.value}`, 11);
-        break;
-      case "source":
-        write(b.label, 11, { bold: true });
-        write(b.detail, 10, { gray: true });
-        write(b.url, 9, { gray: true });
-        gap(4);
-        break;
-    }
-  }
-
+  const pdf = await renderReportPdf(doc);
   pdf.save(`${REPORT_EXPORT_FILENAME_BASE}.pdf`);
 }
 
@@ -141,7 +70,7 @@ async function downloadDocx(doc: ReportDocument) {
         );
         break;
       case "p":
-        children.push(new Paragraph({ children: [new TextRun(blockText(b))] }));
+        children.push(new Paragraph({ children: [new TextRun(plainText(b))] }));
         break;
       case "muted":
         children.push(

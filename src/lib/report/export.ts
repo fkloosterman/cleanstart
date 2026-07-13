@@ -274,7 +274,7 @@ export function stripMarkdown(md: string): string {
 }
 
 /** Flatten possibly-Markdown block text for a plain format. */
-function plainText(block: Extract<ExportBlock, { kind: "p" }>): string {
+export function plainText(block: Extract<ExportBlock, { kind: "p" }>): string {
   return block.markdown ? stripMarkdown(block.text) : block.text;
 }
 
