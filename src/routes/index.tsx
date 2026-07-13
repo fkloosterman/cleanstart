@@ -70,7 +70,9 @@ function Landing() {
               "radial-gradient(60% 50% at 50% 0%, color-mix(in oklab, var(--primary) 18%, transparent) 0%, transparent 70%)",
           }}
         />
-        <div className="mx-auto flex max-w-5xl flex-col items-center px-4 pt-20 pb-16 text-center sm:pt-28 sm:pb-20">
+        <div className="mx-auto flex max-w-5xl flex-col items-center px-4 pt-8 pb-16 text-center sm:pt-12 sm:pb-20">
+          <img src="/Clean-Start-Logo.png" alt="Clean Start" className="mb-6 h-32 w-auto sm:h-48" />
+
           <span className="mb-6 inline-flex items-center gap-2 rounded-full border border-border bg-card/60 px-3 py-1 text-xs font-medium text-muted-foreground backdrop-blur">
             <span className="h-1.5 w-1.5 rounded-full bg-primary" />
             Independent. Educational. Privacy-first.

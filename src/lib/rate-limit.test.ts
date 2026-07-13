@@ -34,6 +34,7 @@ describe("readGuestRateLimits", () => {
       messagesPerDay: 40,
       turnsPerSession: 30,
       reportsPerDay: 3,
+      contactPerDay: 10,
     });
   });
 
@@ -43,8 +44,14 @@ describe("readGuestRateLimits", () => {
         GUEST_MESSAGES_PER_DAY: "100",
         GUEST_TURNS_PER_SESSION: "50",
         GUEST_REPORTS_PER_DAY: "10",
+        CONTACT_PER_DAY: "25",
       }),
-    ).toEqual({ messagesPerDay: 100, turnsPerSession: 50, reportsPerDay: 10 });
+    ).toEqual({
+      messagesPerDay: 100,
+      turnsPerSession: 50,
+      reportsPerDay: 10,
+      contactPerDay: 25,
+    });
   });
 
   it("keeps the default for a var that is set but invalid", () => {

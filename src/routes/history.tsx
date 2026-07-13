@@ -1,10 +1,23 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { useServerFn } from "@tanstack/react-start";
 import { useEffect, useState } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { supabase } from "@/integrations/supabase/client";
 import { createSession } from "@/lib/sessions";
+import { deleteAllConversations } from "@/lib/account.functions";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { ArrowRight, FileText, Loader2, MessageCircle, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -31,9 +44,11 @@ type SessionRow = {
 function HistoryPage() {
   const { user, loading: authLoading } = useAuth();
   const navigate = useNavigate();
+  const removeAllConversations = useServerFn(deleteAllConversations);
   const [sessions, setSessions] = useState<SessionRow[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [creating, setCreating] = useState(false);
+  const [deletingAll, setDeletingAll] = useState(false);
 
   const load = async () => {
     if (!user) return;
@@ -71,6 +86,19 @@ function HistoryPage() {
     if (error) return toast.error("Couldn't delete");
     setSessions((s) => s?.filter((x) => x.id !== id) ?? null);
     toast.success("Deleted");
+  };
+
+  const handleDeleteAll = async () => {
+    setDeletingAll(true);
+    try {
+      await removeAllConversations({});
+      setSessions([]);
+      toast.success("All conversations deleted");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Couldn't delete your conversations");
+    } finally {
+      setDeletingAll(false);
+    }
   };
 
   if (authLoading) {
@@ -197,6 +225,52 @@ function HistoryPage() {
             );
           })}
         </ul>
+      )}
+
+      {sessions && sessions.length > 0 && (
+        <div className="mt-8 flex items-center justify-between gap-3 rounded-xl border border-border bg-card px-4 py-3">
+          <p className="text-xs text-muted-foreground">
+            Delete every conversation, message, and report. Your account stays — manage it on your{" "}
+            <Link to="/account" className="underline underline-offset-4">
+              account
+            </Link>{" "}
+            page.
+          </p>
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button variant="outline" size="sm" className="shrink-0" disabled={deletingAll}>
+                {deletingAll ? (
+                  <Loader2 className="mr-1 h-4 w-4 animate-spin" />
+                ) : (
+                  <Trash2 className="mr-1 h-4 w-4" />
+                )}
+                Delete all
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Delete all conversations?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  This permanently deletes all your conversations and their reports. Your account
+                  itself stays. This can't be undone.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel disabled={deletingAll}>Cancel</AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={(e) => {
+                    e.preventDefault();
+                    if (!deletingAll) handleDeleteAll();
+                  }}
+                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                >
+                  {deletingAll ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : null}
+                  Yes, delete all
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        </div>
       )}
     </div>
   );

@@ -20,7 +20,7 @@
  */
 
 /** Which limit a counter row belongs to (the `bucket` column). */
-export type RateLimitBucket = "guest_msg" | "guest_session_turns" | "guest_report";
+export type RateLimitBucket = "guest_msg" | "guest_session_turns" | "guest_report" | "contact";
 
 export interface GuestRateLimits {
   /** Messages per day per IP (`GUEST_MESSAGES_PER_DAY`). */
@@ -29,6 +29,8 @@ export interface GuestRateLimits {
   turnsPerSession: number;
   /** Guest reports per day per IP (`GUEST_REPORTS_PER_DAY`). */
   reportsPerDay: number;
+  /** Contact/feedback submissions per day per IP (`CONTACT_PER_DAY`). */
+  contactPerDay: number;
 }
 
 /** D7's resolved defaults — the values used when the env var is unset. */
@@ -36,6 +38,7 @@ export const DEFAULT_GUEST_RATE_LIMITS: GuestRateLimits = {
   messagesPerDay: 40,
   turnsPerSession: 30,
   reportsPerDay: 3,
+  contactPerDay: 10,
 };
 
 /**
@@ -64,6 +67,7 @@ export function readGuestRateLimits(env: Record<string, string | undefined>): Gu
       DEFAULT_GUEST_RATE_LIMITS.turnsPerSession,
     ),
     reportsPerDay: parseLimit(env.GUEST_REPORTS_PER_DAY, DEFAULT_GUEST_RATE_LIMITS.reportsPerDay),
+    contactPerDay: parseLimit(env.CONTACT_PER_DAY, DEFAULT_GUEST_RATE_LIMITS.contactPerDay),
   };
 }
 
