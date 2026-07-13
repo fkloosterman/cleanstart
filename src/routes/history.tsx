@@ -38,7 +38,9 @@ type SessionRow = {
   created_at: string;
   updated_at: string;
   messages: { count: number }[];
-  reports: { id: string }[];
+  // `reports` embeds as a to-one relationship (reports.session_id is UNIQUE),
+  // so PostgREST returns a single object or null here — not an array.
+  reports: { id: string } | { id: string }[] | null;
 };
 
 function HistoryPage() {
@@ -166,7 +168,7 @@ function HistoryPage() {
         <ul className="space-y-3">
           {sessions.map((s, i) => {
             const msgCount = s.messages?.[0]?.count ?? 0;
-            const hasReport = (s.reports?.length ?? 0) > 0;
+            const hasReport = Array.isArray(s.reports) ? s.reports.length > 0 : !!s.reports;
             const isCurrent = i === 0;
             return (
               <li

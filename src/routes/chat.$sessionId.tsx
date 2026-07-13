@@ -90,6 +90,14 @@ function ChatSessionPage() {
   const [persona, setPersona] = useState<string | null>(searchPersona ?? null);
   const [initialProfile, setInitialProfile] = useState<SessionProfile>(emptyProfile);
   const [initialReachedAt, setInitialReachedAt] = useState<string | null>(null);
+  // Whether this session already has a report, and when it was generated —
+  // drives the "View report" vs "Generate report" label and the staleness hint.
+  // `generatedAt` is the document's compose time (refreshed on every update),
+  // not the row's created_at (which the upsert never bumps).
+  const [initialReport, setInitialReport] = useState<{ id: string; generatedAt: string } | null>(
+    null,
+  );
+  const [latestMessageAt, setLatestMessageAt] = useState<string | null>(null);
   const [notFound, setNotFound] = useState(false);
 
   useEffect(() => {
@@ -98,7 +106,7 @@ function ChatSessionPage() {
     if (!user) return;
     let cancelled = false;
     (async () => {
-      const [sessionRes, msgRes, profileRes] = await Promise.all([
+      const [sessionRes, msgRes, profileRes, reportRes] = await Promise.all([
         // Load the session profile (WP1.6) + readiness stamp (WP1.7) so the
         // sidebar and the report gate render from them.
         supabase
@@ -112,6 +120,14 @@ function ChatSessionPage() {
           .eq("session_id", sessionId)
           .order("created_at", { ascending: true }),
         supabase.from("profiles").select("persona").eq("id", user.id).maybeSingle(),
+        // Does a report already exist for this session? Its compose time lets
+        // the header show "View report" and flag it stale once the chat moves on.
+        supabase
+          .from("reports")
+          .select("id, created_at, document")
+          .eq("session_id", sessionId)
+          .eq("user_id", user.id)
+          .maybeSingle(),
       ]);
       if (cancelled) return;
       if (sessionRes.error || !sessionRes.data || sessionRes.data.user_id !== user.id) {
@@ -122,7 +138,20 @@ function ChatSessionPage() {
       // blocks (§11).
       setInitialProfile(normalizeProfile(sessionRes.data.profile));
       setInitialReachedAt(sessionRes.data.readiness_reached_at);
-      setInitialMessages((msgRes.data ?? []).map(rowToUIMessage));
+      const msgs = msgRes.data ?? [];
+      setInitialMessages(msgs.map(rowToUIMessage));
+      setLatestMessageAt(msgs.length ? msgs[msgs.length - 1].created_at : null);
+      const rr = reportRes.data;
+      setInitialReport(
+        rr
+          ? {
+              id: rr.id,
+              generatedAt:
+                (rr.document as { meta?: { generated_at?: string } } | null)?.meta?.generated_at ??
+                rr.created_at,
+            }
+          : null,
+      );
       setPersona((prev) => prev ?? profileRes.data?.persona ?? null);
     })();
     return () => {
@@ -179,6 +208,8 @@ function ChatSessionPage() {
       initialMessages={initialMessages}
       initialProfile={initialProfile}
       initialReachedAt={initialReachedAt}
+      initialReport={initialReport}
+      latestMessageAt={latestMessageAt}
       persona={persona}
       initialMessage={initialMessage}
       user={user}
@@ -192,6 +223,8 @@ function ChatConversation({
   initialMessages,
   initialProfile,
   initialReachedAt,
+  initialReport,
+  latestMessageAt,
   persona,
   initialMessage,
   user,
@@ -201,6 +234,8 @@ function ChatConversation({
   initialMessages: UIMessage[];
   initialProfile: SessionProfile;
   initialReachedAt: string | null;
+  initialReport: { id: string; generatedAt: string } | null;
+  latestMessageAt: string | null;
   persona: string | null;
   initialMessage: string | undefined;
   user: User;
@@ -303,6 +338,16 @@ function ChatConversation({
 
   const isBusy = status === "submitted" || status === "streaming";
 
+  // Report state for the header button. The report is a snapshot of the
+  // conversation at generation time, so it goes stale the moment the chat
+  // continues past it — whether messages arrived before this load
+  // (latestMessageAt) or were added during it (the list growing).
+  const hasReport = !!initialReport;
+  const grewSinceLoad = messages.length > initialMessages.length;
+  const staleAtLoad =
+    !!initialReport && !!latestMessageAt && latestMessageAt > initialReport.generatedAt;
+  const reportStale = hasReport && (staleAtLoad || grewSinceLoad);
+
   const sendFeedback = async (rating: "up" | "down") => {
     if (feedbackSent) return;
     setFeedbackSent(true);
@@ -354,8 +399,23 @@ function ChatConversation({
               </Button>
               {gate.open ? (
                 <Button variant="outline" size="sm" asChild>
-                  <Link to="/report" search={{ sessionId } as never}>
-                    <FileText className="mr-1 h-4 w-4" /> Generate report
+                  <Link
+                    to="/report"
+                    search={{ sessionId } as never}
+                    title={
+                      reportStale
+                        ? "You've chatted since this report — open it to update"
+                        : undefined
+                    }
+                  >
+                    <FileText className="mr-1 h-4 w-4" />
+                    {hasReport ? "View report" : "Generate report"}
+                    {reportStale && (
+                      <span
+                        className="ml-1.5 inline-block h-2 w-2 rounded-full bg-amber-500"
+                        aria-label="Update available"
+                      />
+                    )}
                   </Link>
                 </Button>
               ) : (
@@ -378,6 +438,14 @@ function ChatConversation({
               <span className="font-medium text-foreground">
                 {missingSlotLabels(gate.missing).join(", ")}
               </span>
+            </p>
+          )}
+
+          {/* The report is a snapshot; flag it once the chat moves past it. */}
+          {gate.open && reportStale && (
+            <p className="mb-3 text-center text-xs text-muted-foreground">
+              You've added to this conversation since your report —{" "}
+              <span className="font-medium text-foreground">open it to bring it up to date</span>.
             </p>
           )}
 

@@ -30,8 +30,10 @@ import {
   ExternalLink,
   HelpCircle,
   Leaf,
+  Loader2,
   Lock,
   ShieldCheck,
+  Sparkles,
 } from "lucide-react";
 import { MessageResponse } from "@/components/ai-elements/message";
 import { ProfileSidebarContent } from "@/components/ProfileSidebar";
@@ -324,9 +326,15 @@ const SECTION_RENDERERS: Record<
 export function ReportDocumentView({
   document: doc,
   isExample,
+  onRegenerate,
+  regenerating,
+  stale,
 }: {
   document: ReportDocument;
   isExample?: boolean;
+  onRegenerate?: () => void;
+  regenerating?: boolean;
+  stale?: boolean;
 }) {
   const sections = documentSections(doc);
   const generatedAt = formatDate(doc.meta.generated_at);
@@ -340,8 +348,30 @@ export function ReportDocumentView({
             <ArrowLeft className="mr-1 h-4 w-4" /> Back
           </Link>
         </Button>
-        {/* Exports are frozen projections of this document, not the page (§7.2). */}
-        <ReportDownloadMenu document={doc} />
+        <div className="flex items-center gap-2">
+          {/* The snapshot can be refreshed once the conversation moves past it.
+              Update overwrites in place — one report per session (D5, seam 1). */}
+          {!isExample && onRegenerate && (
+            <Button
+              variant={stale ? "default" : "outline"}
+              size="sm"
+              onClick={onRegenerate}
+              disabled={regenerating}
+              title={
+                stale ? "Your conversation continued after this report was generated" : undefined
+              }
+            >
+              {regenerating ? (
+                <Loader2 className="mr-1 h-4 w-4 animate-spin" />
+              ) : (
+                <Sparkles className="mr-1 h-4 w-4" />
+              )}
+              {stale ? "Update report" : "Regenerate"}
+            </Button>
+          )}
+          {/* Exports are frozen projections of this document, not the page (§7.2). */}
+          <ReportDownloadMenu document={doc} />
+        </div>
       </div>
 
       <header className="mb-8 rounded-2xl border border-border bg-gradient-to-br from-primary-light/60 to-card p-6">
@@ -360,6 +390,13 @@ export function ReportDocumentView({
           take next.
           {generatedAt && <span className="block opacity-80">Generated {generatedAt}.</span>}
         </p>
+        {stale && (
+          <p className="mt-3 flex items-center gap-1.5 rounded-lg border border-amber-400/50 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
+            <Sparkles className="h-3.5 w-3.5 shrink-0" />
+            Your conversation continued after this was generated — update it to reflect what you've
+            since discussed.
+          </p>
+        )}
         <div className="mt-5">
           <div className="mb-1 flex items-center justify-between text-xs text-muted-foreground">
             <span>Readiness</span>
