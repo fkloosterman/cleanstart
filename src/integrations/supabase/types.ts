@@ -173,6 +173,33 @@ export type Database = {
         };
         Relationships: [];
       };
+      contact_submissions: {
+        Row: {
+          category: string;
+          created_at: string;
+          id: string;
+          message: string;
+          reply_email: string | null;
+          user_id: string | null;
+        };
+        Insert: {
+          category: string;
+          created_at?: string;
+          id?: string;
+          message: string;
+          reply_email?: string | null;
+          user_id?: string | null;
+        };
+        Update: {
+          category?: string;
+          created_at?: string;
+          id?: string;
+          message?: string;
+          reply_email?: string | null;
+          user_id?: string | null;
+        };
+        Relationships: [];
+      };
       feedback: {
         Row: {
           comment: string | null;

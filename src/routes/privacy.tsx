@@ -33,7 +33,7 @@ export const Route = createFileRoute("/privacy")({
   component: PrivacyPage,
 });
 
-const LAST_UPDATED = "July 9, 2026";
+const LAST_UPDATED = "July 12, 2026";
 
 function PrivacyPage() {
   return (
@@ -115,19 +115,27 @@ function PrivacyPage() {
           </PolicyItem>
 
           <PolicyItem icon={<Trash2 className="h-4 w-4 text-primary" />} title="Deleting your data">
-            You can delete any conversation (and its report) from{" "}
+            You can delete any single conversation (and its report), or all of them at once, from{" "}
             <Link to="/history" className="underline underline-offset-4">
               your sessions
             </Link>{" "}
-            page at any time. To delete your account entirely, email us at the address below and
-            we'll remove your sessions, messages, reports, and profile.
+            page at any time. To delete your account entirely — your profile, sessions, messages,
+            and reports — go to your{" "}
+            <Link to="/account" className="underline underline-offset-4">
+              account
+            </Link>{" "}
+            page and choose "Delete my account." It takes effect immediately and can't be undone.
           </PolicyItem>
 
           <PolicyItem icon={<Mail className="h-4 w-4 text-primary" />} title="Contact">
-            Privacy questions, data requests, or feedback:{" "}
-            <a href="mailto:hello@cleanstart.app" className="underline underline-offset-4">
-              hello@cleanstart.app
-            </a>
+            Privacy questions, data requests, or feedback? Use our{" "}
+            <Link
+              to="/contact"
+              search={{ category: "question" }}
+              className="underline underline-offset-4"
+            >
+              contact form
+            </Link>
             .
           </PolicyItem>
 
@@ -209,10 +217,14 @@ function PrivacyPage() {
           </PolicyItem>
 
           <PolicyItem icon={<Mail className="h-4 w-4 text-primary" />} title="Contact">
-            Questions about these terms:{" "}
-            <a href="mailto:hello@cleanstart.app" className="underline underline-offset-4">
-              hello@cleanstart.app
-            </a>
+            Questions about these terms? Use our{" "}
+            <Link
+              to="/contact"
+              search={{ category: "question" }}
+              className="underline underline-offset-4"
+            >
+              contact form
+            </Link>
             .
           </PolicyItem>
         </div>

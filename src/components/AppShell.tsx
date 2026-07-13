@@ -39,6 +39,7 @@ const NAV = [
   { to: "/history", label: "History" },
   { to: "/resources", label: "Resources" },
   { to: "/about", label: "About" },
+  { to: "/contact", label: "Give Feedback" },
 ] as const;
 
 export function AppShell({ children }: { children: ReactNode }) {
@@ -88,9 +89,14 @@ export function AppShell({ children }: { children: ReactNode }) {
 
           <div className="hidden items-center gap-2 md:flex">
             {loading ? null : user ? (
-              <Button variant="ghost" size="sm" onClick={handleSignOut}>
-                Sign out
-              </Button>
+              <>
+                <Button variant="ghost" size="sm" asChild>
+                  <Link to="/account">Account</Link>
+                </Button>
+                <Button variant="ghost" size="sm" onClick={handleSignOut}>
+                  Sign out
+                </Button>
+              </>
             ) : (
               <Button size="sm" onClick={() => setAuthOpen(true)}>
                 Sign in
@@ -123,17 +129,26 @@ export function AppShell({ children }: { children: ReactNode }) {
               ))}
               <div className="mt-2 border-t border-border pt-3">
                 {user ? (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="w-full justify-start"
-                    onClick={() => {
-                      setMenuOpen(false);
-                      handleSignOut();
-                    }}
-                  >
-                    Sign out
-                  </Button>
+                  <>
+                    <Link
+                      to="/account"
+                      onClick={() => setMenuOpen(false)}
+                      className="block rounded-md px-3 py-2 text-sm font-medium text-foreground hover:bg-accent"
+                    >
+                      Account
+                    </Link>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="w-full justify-start"
+                      onClick={() => {
+                        setMenuOpen(false);
+                        handleSignOut();
+                      }}
+                    >
+                      Sign out
+                    </Button>
+                  </>
                 ) : (
                   <Button
                     size="sm"
@@ -164,9 +179,14 @@ export function AppShell({ children }: { children: ReactNode }) {
       <footer className="border-t border-border bg-background py-6">
         <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-2 px-4 text-xs text-muted-foreground sm:flex-row">
           <p>Privacy-first · Vendor-neutral · © 2026 Clean Start</p>
-          <Link to="/privacy" className="hover:text-foreground">
-            Privacy &amp; Terms of Service
-          </Link>
+          <div className="flex items-center gap-4">
+            <Link to="/contact" className="hover:text-foreground">
+              Contact
+            </Link>
+            <Link to="/privacy" className="hover:text-foreground">
+              Privacy &amp; Terms of Service
+            </Link>
+          </div>
         </div>
       </footer>
 
